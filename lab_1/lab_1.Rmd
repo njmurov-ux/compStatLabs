@@ -1,0 +1,29 @@
+---
+title: "Lab 1"
+author: "Aron, Sergey"
+date: "2026-01-22"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+
+
+```{r 1_1, echo=FALSE}
+
+```
+
+
+
+## Appendix
+
+
+```{r, ref.label=setdiff(knitr::all_labels(), c('setup')), echo=TRUE, eval=FALSE}
+
+
+
+```
