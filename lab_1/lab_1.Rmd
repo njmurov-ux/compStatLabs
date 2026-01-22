@@ -1,6 +1,6 @@
 ---
 title: "Lab 1"
-author: "Aron, Sergey"
+author: "Aron Enström (aroen488), Sergey Volchkov (servo519)"
 date: "2026-01-22"
 output: pdf_document
 ---
@@ -9,7 +9,7 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+## 1
 
 
 ### 1.1. Function plot
@@ -75,7 +75,7 @@ grid()
 ```{r 1_3, echo=FALSE}
 #1.3
 
-## Bisection method (root-finding) for a user-chosen interval [a, b]
+## Bisection method (root-finding) for interval [a, b]
 bisect_root <- function(f, a, b, tol = 1e-10, max_iter = 200) {
   fa <- f(a); fb <- f(b)
 
@@ -376,6 +376,66 @@ For the task at hand, we would choose the bisection method despite it being slow
 
 Generally, we prefer bisection when we have a bracketing interval $[a,b]$ with a sign change 
 $f(a)f(b)<0$, and we want a method that is guaranteed to converge under mild conditions (continuous $f$). We prefer secant when we have good starting values (close to the root), function evaluations are costly and we want fewer iterations than bisection.  
+
+## 2
+
+### 2.1. Function to calculate determinant of the information matrix
+
+```{r 2_1, echo=FALSE}
+# 2.1
+f <- function(a) {
+  x <- c(-1, -a, a, 1)
+
+  X <- cbind(
+    1,
+    x,
+    x^2,
+    x^3
+  )
+
+  det(t(X) %*% X)
+}
+```
+
+### 2.2. Function plot
+
+```{r 2_2, echo=FALSE}
+# 2.2
+f <- function(a) {
+  x <- c(-1, -a, a, 1)
+  X <- cbind(1, x, x^2, x^3)
+  det(t(X) %*% X)
+}
+
+aa <- seq(0, 1, length.out = 2001)
+ff <- sapply(aa, f)
+
+plot(aa, ff, type = "l", lwd = 2,
+     xlab = "a", ylab = "f(a) = det(t(X) %*% X)",
+     main = "Determinant of information matrix vs a")
+
+abline(v = c(0, 1), lty = 2, col = "grey50")
+points(c(0, 1), c(f(0), f(1)), pch = 19, col = "red")
+
+f0 <- f(0); f1 <- f(1)
+```
+
+#### Interpretation of a=0 and a=1
+
+- Case $a=0$: the design points are $x=(-1,0,0,1)$, so $x=0$ is duplicated and there are only three distinct $x$-values. This typically makes the design matrix $X$ lose rank, so the information matrix $X^\top X$ becomes singular and $f(0)=\det(X^\top X)=0$, meaning the cubic regression parameters are not all identifiable from this design.
+
+- Case $a=1$: the design points are $x=(-1,-1,1,1)$, so there are only two distinct $x$-values (each duplicated). Then $X$ cannot have full column rank $4$, so $X^\top X$ is singular and $f(1)=\det(X^\top X)=0$.
+
+
+### 2.3. Local maximum of the function
+
+```{r 2_3, echo=FALSE}
+# 2.3
+opt <- optimize(f, interval = c(0, 1), maximum = TRUE)
+```
+
+The function has its maximum at `r opt$maximum` with the maximum value of `r opt$objective`. This matches what we see on the plot in 2.2. 
+
 
 ## Appendix
 
