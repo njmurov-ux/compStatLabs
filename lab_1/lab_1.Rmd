@@ -303,69 +303,7 @@ x_{n+1}
 = x_n - g'(x_n)\,\frac{x_n - x_{n-1}}{g'(x_n)-g'(x_{n-1})}.
 $$
 
-The pattern in the table for the secant method (lots of roots around $10^4$ or “fail”) is consistent with secant taking a bad step and then wandering to a region where $g'(x)$ is very small/flat (we can observe it in the region of the $g'(x)$ graph in section 1.2 for in the $x$ interval from 1.5 to 4 and we can see from the table that the algorithm fails in nearly all cases when one or both starting values are in this interval) or where the update becomes ill-conditioned (e.g. $g'(x_n)-g'(x_{n-1})$ tiny), which can blow up the update and lead to divergence or stagnation. This is a known secant pitfall: it can diverge when it encounters a near-zero slope / derivative-like quantity in the update.
-
-```{r 1_5_1, echo=FALSE, warning=FALSE}
-# Investigate the cause of failure of the secant method
-secant_trace <- function(f, x0, x1, tol = 1e-12, max_iter = 50) {
-  hist <- vector("list", max_iter)
-
-  f0 <- f(x0); f1 <- f(x1)
-  if (!is.finite(f0) || !is.finite(f1)) stop("Non-finite start.")
-
-  for (iter in 1:max_iter) {
-    denom <- f1 - f0
-
-    x2 <- if (denom == 0) NA_real_ else x1 - f1 * (x1 - x0) / denom
-
-    hist[[iter]] <- data.frame(
-      iter = iter,
-      x0 = x0, x1 = x1,
-      f_x0 = f0, f_x1 = f1,
-      denom = denom,
-      x2 = x2,
-      f_x2 = if (is.finite(x2)) f(x2) else NA_real_
-    )
-
-    if (!is.finite(x2))
-      return(list(converged = FALSE, reason = "non-finite x2 (likely denom ~ 0 or overflow)",
-                  iter = iter, history = do.call(rbind, hist[1:iter])))
-
-    if (abs(x2 - x1) < tol || abs(f(x2)) < tol)
-      return(list(converged = TRUE, reason = "tolerance reached",
-                  iter = iter, root = x2, f_root = f(x2),
-                  history = do.call(rbind, hist[1:iter])))
-
-    ## shift
-    x0 <- x1; f0 <- f1
-    x1 <- x2; f1 <- f(x1)
-    if (!is.finite(f1))
-      return(list(converged = FALSE, reason = "non-finite f(x)",
-                  iter = iter, history = do.call(rbind, hist[1:iter])))
-  }
-
-  list(converged = FALSE, reason = "max_iter reached",
-       iter = max_iter, root = x1, f_root = f1,
-       history = do.call(rbind, hist))
-}
-
-out <- secant_trace(g_prime, x0 = 0, x1 = 2, max_iter = 60)
-cat("Algorithm converged: ", out$converged)
-cat("Reason: ", out$reason)
-cat("Number of iterations:", out$iter)
-```
-History - first 10 iterations:
-
-```{r 1_5_2, echo=FALSE, warning=FALSE}
-head(out$history, 10)
-```
-History - last 10 iterations:
-
-```{r 1_5_3, echo=FALSE, warning=FALSE}
-tail(out$history, 10)
-```
-
-We can see from the above output that with the starting values 0 and 2, due to the above-mentioned flatness of the $g'(x)$ graph, the secant algorithm overshoots the interval containing the root and then wanders further and further away from the interval containing the root as the numerator $x_n - x_{n-1}$ of the above equation becomes larger and larger while the denominator $g'(x_n)-g'(x_{n-1})$ becomes smaller and smaller.   
+The pattern in the table for the secant method (lots of roots around $10^4$ or “fail”) is consistent with secant taking a bad step and then wandering to a region where $g'(x)$ is very small/flat (we can observe it in the region of the $g'(x)$ graph in section 1.2 for in the $x$ interval from 1.5 to 4 and we can see from the table that the algorithm fails in nearly all cases when one or both starting values are in this interval) or where the update becomes ill-conditioned (e.g. $g'(x_n)-g'(x_{n-1})$ tiny), which can blow up the update and lead to divergence or stagnation. It appears that the secant method can diverge when it encounters a near-zero slope / derivative-like quantity in the update.
 
 The amount of programming effort is perhaps slightly higher for the secant method.
 
