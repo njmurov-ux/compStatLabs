@@ -1,0 +1,388 @@
+---
+title: "Lab 2"
+author: "Aron Enström (aroen488), Sergey Volchkov (servo519)"
+date: "2026-01-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1
+
+
+### 1.1. Function plot
+```{r 1_1, echo=FALSE}
+#1.1
+f <- function(x, y) sin(x + y) + (x - y)^2 - 1.5*x + 2.5*y + 1
+
+x <- seq(-1.5, 4, length.out = 300)
+y <- seq(-3,   4, length.out = 300)
+
+z <- outer(x, y, Vectorize(f))
+
+filled.contour(x, y, z,
+  nlevels = 30,
+  color.palette = hcl.colors,
+  plot.axes = {
+    axis(1); axis(2)
+    contour(x, y, z, add = TRUE, drawlabels = TRUE)
+  }
+)
+```
+
+### 1.2. Gradient and Hessian
+
+For 
+$$
+f(x,y)=\sin(x+y)+(x-y)^2-1.5x+2.5y+1,
+$$
+the gradient is
+$$
+\nabla f(x,y)=
+\begin{pmatrix}
+\frac{\partial f}{\partial x}\\[4pt]
+\frac{\partial f}{\partial y}
+\end{pmatrix}
+=
+\begin{pmatrix}
+\cos(x+y)+2(x-y)-1.5\\[4pt]
+\cos(x+y)-2(x-y)+2.5
+\end{pmatrix}.
+$$
+
+The Hessian matrix (matrix of second partial derivatives) is
+$$
+\nabla^2 f(x,y)=
+\begin{pmatrix}
+\frac{\partial^2 f}{\partial x^2} & \frac{\partial^2 f}{\partial x\partial y}\\[4pt]
+\frac{\partial^2 f}{\partial y\partial x} & \frac{\partial^2 f}{\partial y^2}
+\end{pmatrix}
+=
+\begin{pmatrix}
+-\sin(x+y)+2 & -\sin(x+y)-2\\[4pt]
+-\sin(x+y)-2 & -\sin(x+y)+2
+\end{pmatrix},
+$$
+where $\frac{\partial^2 f}{\partial x\partial y}=\frac{\partial^2 f}{\partial y\partial x}$.
+
+
+```{r 1_2, echo=FALSE}
+#1.2
+## Gradient
+grad_f <- function(x, y) {
+  c(
+    dx = cos(x + y) + 2*(x - y) - 1.5,
+    dy = cos(x + y) - 2*(x - y) + 2.5
+  )
+}
+
+## Hessian
+hess_f <- function(x, y) {
+  s <- -sin(x + y)
+  matrix(
+    c(s + 2, s - 2,
+      s - 2, s + 2),
+    nrow = 2, byrow = TRUE,
+    dimnames = list(c("x", "y"), c("x", "y"))
+  )
+}
+
+## wrappers that take par = c(x, y) for optimization
+fn_par   <- function(par) f(par[1], par[2])
+gr_par   <- function(par) grad_f(par[1], par[2])
+hess_par <- function(par) hess_f(par[1], par[2])
+
+## test
+par0 <- c(0, 0)
+fn_par(par0)
+gr_par(par0)
+hess_par(par0)
+```
+
+### 1.3 Newton algorithm
+
+We are asked to search for the global minimum solution within the box 
+
+$$
+x \in [-1.5,\,4], \qquad y \in [-3,\,4].
+$$
+
+so the algorithm code needs to be adjusted to prevent the search path wandering outside this box. 
+
+```{r 1_3, echo=FALSE}
+#1.3
+
+newton2d_box <- function(fn, gr, hess, x0, y0,
+                         lower, upper,
+                         tol = 1e-8, maxit = 100,
+                         lambda0 = 1e-6, lambda_mult = 10,
+                         alpha0 = 1, beta = 0.5, c1 = 1e-4,
+                         ..., verbose = FALSE) {
+
+  project <- function(par) pmin(pmax(par, lower), upper)
+
+  ## infinity-norm of projected gradient (KKT-style for box constraints)
+  projgrad_inf <- function(x, g, eps = 1e-12) {
+    pg <- g
+    for (i in 1:2) {
+      if (x[i] <= lower[i] + eps) pg[i] <- min(g[i], 0)  # should be >=0 at lower bound
+      if (x[i] >= upper[i] - eps) pg[i] <- max(g[i], 0)  # should be <=0 at upper bound 
+    }
+    max(abs(pg))
+  }
+
+  x <- project(c(x0, y0))
+  f0 <- fn(x[1], x[2], ...)
+
+  for (k in 1:maxit) {
+    g <- gr(x[1], x[2], ...)
+    pg_norm <- projgrad_inf(x, g)
+
+    if (pg_norm < tol) {
+      return(list(par = x, value = f0, iter = k - 1, converged = TRUE,
+                  projgrad = pg_norm))
+    }
+
+    H <- hess(x[1], x[2], ...)
+    I2 <- diag(2)
+
+    ## Regularize Hessian until solvable
+    lambda <- lambda0
+    p <- NULL
+    repeat {
+      p_try <- tryCatch(solve(H + lambda * I2, g), error = function(e) NULL)
+      if (!is.null(p_try)) { p <- p_try; break }
+      lambda <- lambda * lambda_mult
+      if (lambda > 1e12) stop("Could not compute Newton step (even after regularization).")
+    }
+
+    ## Backtracking line search with Armijo sufficient decrease
+    a <- alpha0
+    repeat {
+      x_new <- project(x - a * p)
+      f_new <- fn(x_new[1], x_new[2], ...)
+
+      ## directional derivative along -p is approx -g^T p
+      armijo_rhs <- f0 - c1 * a * sum(g * p)
+
+      if (is.finite(f_new) && f_new <= armijo_rhs) break
+      a <- a * beta
+      if (a < 1e-12) break
+    }
+
+    if (verbose) {
+      cat(sprintf(
+        "iter=%d  x=%.8f y=%.8f  f=%.10f  step=%.1e  ||pg||_inf=%.3e  lambda=%.1e\n",
+        k, x_new[1], x_new[2], f_new, a, pg_norm, lambda
+      ))
+    }
+
+    ## Only use step-size convergence as a secondary criterion
+    if (sqrt(sum((x_new - x)^2)) < tol && pg_norm < tol) {
+      return(list(par = x_new, value = f_new, iter = k, converged = TRUE,
+                  projgrad = pg_norm))
+    }
+
+    x <- x_new
+    f0 <- f_new
+  }
+
+  list(par = x, value = f0, iter = maxit, converged = FALSE,
+       projgrad = projgrad_inf(x, gr(x[1], x[2], ...)))
+}
+
+
+# newton2d_box <- function(fn, gr, hess, x0, y0,
+#                          lower, upper,
+#                          tol = 1e-8, maxit = 100,
+#                          lambda0 = 1e-6, lambda_mult = 10,
+#                          alpha0 = 1, beta = 0.5,
+#                          ..., verbose = FALSE) {
+# 
+#   #To keep the results within the prescribed x,y limits
+#   project <- function(par) pmin(pmax(par, lower), upper)
+# 
+#   x <- project(c(x0, y0))
+#   f0 <- fn(x[1], x[2], ...)
+# 
+#   for (k in 1:maxit) {
+#     g <- gr(x[1], x[2], ...)
+#     H <- hess(x[1], x[2], ...)
+#     I2 <- diag(2)
+# 
+#     ## regularize until solvable
+#     lambda <- lambda0
+#     p <- NULL
+#     repeat {
+#       p_try <- tryCatch(solve(H + lambda * I2, g), error = function(e) NULL)
+#       if (!is.null(p_try)) { p <- p_try; break }
+#       lambda <- lambda * lambda_mult
+#       if (lambda > 1e12) stop("Could not compute Newton step.")
+#     }
+# 
+#     ## backtracking line search with projection
+#     a <- alpha0
+#     repeat {
+#       x_new <- project(x - a * p)
+#       f_new <- fn(x_new[1], x_new[2], ...)
+#       if (is.finite(f_new) && f_new <= f0) break
+#       a <- a * beta
+#       if (a < 1e-12) break
+#     }
+# 
+#     if (verbose) {
+#       cat(sprintf("iter=%d  x=%.8f y=%.8f  f=%.10f  step=%.1e\n",
+#                   k, x_new[1], x_new[2], f_new, a))
+#     }
+# 
+#     if (sqrt(sum((x_new - x)^2)) < tol) {
+#       return(list(par = x_new, value = f_new, iter = k, converged = TRUE))
+#     }
+# 
+#     x <- x_new
+#     f0 <- f_new
+#   }
+# 
+#   list(par = x, value = f0, iter = maxit, converged = FALSE)
+# }
+
+# ## x_{k+1} = x_k - H(x_k)^{-1} * g(x_k)
+# newton2d_reg <- function(fn, gr, hess, x0, y0,
+#                          tol = 1e-8, maxit = 100,
+#                          lambda0 = 1e-6, lambda_mult = 10,
+#                          ..., verbose = FALSE) {
+# 
+#   x <- c(x0, y0)
+# 
+#   for (k in 1:maxit) {
+#     g <- gr(x[1], x[2], ...)
+#     H <- hess(x[1], x[2], ...)
+#     I2 <- diag(2)
+# 
+#     lambda <- lambda0
+#     p <- NULL
+# 
+#     ## Keep increasing lambda until the linear system is solvable
+#     repeat {
+#       Hp <- H + lambda * I2
+#       p_try <- tryCatch(solve(Hp, g), error = function(e) NULL)  # catch singularity
+#       if (!is.null(p_try)) { p <- p_try; break }
+#       lambda <- lambda * lambda_mult
+#       if (lambda > 1e12) stop("Hessian remained singular/ill-conditioned even after regularization.")
+#     }
+# 
+#     x_new <- x - p
+# 
+#     if (verbose) {
+#       cat(sprintf("iter=%d  x=%.10f y=%.10f  f=%.10f  ||grad||=%.3e  lambda=%.1e\n",
+#                   k, x_new[1], x_new[2], fn(x_new[1], x_new[2], ...),
+#                   sqrt(sum(g^2)), lambda))
+#     }
+# 
+#     if (sqrt(sum((x_new - x)^2)) < tol) {
+#       return(list(par = x_new, value = fn(x_new[1], x_new[2], ...),
+#                   iter = k, converged = TRUE))
+#     }
+#     x <- x_new
+#   }
+# 
+#   list(par = x, value = fn(x[1], x[2], ...), iter = maxit, converged = FALSE)
+# }
+# 
+lower <- c(-1.5, -3)
+upper <- c( 4.0,  4)
+res <- newton2d_box(fn = f, gr = grad_f, hess = hess_f, 
+                    x0 = 0, y0 = 0, lower=lower, upper=upper, verbose = TRUE)
+res$par
+res$value
+```
+
+### 1.4 Testing with different starting points
+
+```{r 1_4, echo=FALSE}
+#1.4
+lower <- c(-1.5, -3)
+upper <- c( 4.0,  4)
+
+one_run <- function(x0, y0) {
+  nres <- newton2d_box(f, grad_f, hess_f, x0, y0, lower, upper)
+
+  ores <- optim(
+    par = c(x0, y0),
+    fn = fn_par, gr = gr_par,
+    method = "L-BFGS-B",
+    lower = lower, upper = upper
+  )  # box constraints supported by L-BFGS-B
+
+  data.frame(
+    x0 = x0, y0 = y0,
+    newton_iter = nres$iter,
+    newton_x = nres$par[1], newton_y = nres$par[2],
+    newton_value = nres$value,
+    optim_iter = ores$counts[["function"]],
+    optim_x = ores$par[1], optim_y = ores$par[2],
+    optim_value = ores$value
+  )
+}
+
+
+starts <- rbind(
+  c(-1.0, -2.0),
+  c( 3.5,  3.5),
+  c( 0.0,  0.0),
+  c( 4.0, -3.0),
+  c(-1.5,  4.0)
+)
+colnames(starts) <- c("x0", "y0")
+# 
+# one_run <- function(x0, y0) {
+#   ## Newton (regularized)
+#   nres <- newton2d_reg(fn = f, gr = grad_f, hess = hess_f, x0 = x0, y0 = y0)
+# 
+#   ## optim() comparison, BFGS with analytic gradient
+#   ores <- optim(par = c(x0, y0), fn = fn_par, gr = gr_par, method = "BFGS")
+# 
+#   data.frame(
+#     x0 = x0, y0 = y0,
+#     newton_iter = nres$iter,
+#     newton_x = unname(nres$par[1]),
+#     newton_y = unname(nres$par[2]),
+#     newton_value = nres$value,
+#     optim_iter = ores$counts[["function"]],
+#     optim_x = unname(ores$par[1]),
+#     optim_y = unname(ores$par[2]),
+#     optim_value = ores$value,
+#     stringsAsFactors = FALSE
+#   )
+# }
+# 
+res_table <- do.call(
+  rbind,
+  lapply(seq_len(nrow(starts)), function(i) one_run(starts[i, 1], starts[i, 2]))
+)
+
+res_table_fmt <- res_table
+num_cols <- names(res_table_fmt)[sapply(res_table_fmt, is.numeric)]
+
+res_table_fmt[num_cols] <- lapply(res_table_fmt[num_cols], \(v) formatC(v, format = "f", digits = 6))  # fixed decimals
+print(res_table_fmt, row.names = FALSE)
+
+## distinct solutions reached (rounded to group near-equal points)
+unique(round(res_table[, c("newton_x", "newton_y")], 6))
+unique(round(res_table[, c("optim_x", "optim_y")], 6))
+
+```
+
+## 2
+
+
+## Appendix
+
+
+```{r, ref.label=setdiff(knitr::all_labels(), c('setup')), echo=TRUE, eval=FALSE}
+
+
+
+```
