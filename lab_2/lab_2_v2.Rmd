@@ -7,9 +7,10 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+options(tinytex.verbose = TRUE)
 ```
 
-## 1
+## Q1: Optimization of a two-dimensional function
 
 
 ### 1.1. Function plot
@@ -775,7 +776,8 @@ run_lbfgsb <- function(x0, y0) {
   list(par = o$par, value = o$value, counts = o$counts)
 }
 
-ref_list <- lapply(seq_len(nrow(starts_ref)), function(i) run_lbfgsb(starts_ref$x0[i], starts_ref$y0[i]))
+ref_list <- lapply(seq_len(nrow(starts_ref)), 
+                   function(i) run_lbfgsb(starts_ref$x0[i], starts_ref$y0[i]))
 ref_vals <- sapply(ref_list, `[[`, "value")
 best_i <- which.min(ref_vals)
 
@@ -803,7 +805,8 @@ one_run_newton <- function(x0, y0) {
   )
 }
 
-scan_res <- do.call(rbind, lapply(seq_len(nrow(starts)), function(i) one_run_newton(starts$x0[i], starts$y0[i])))
+scan_res <- do.call(rbind, lapply(seq_len(nrow(starts)), 
+                                  function(i) one_run_newton(starts$x0[i], starts$y0[i])))
 
 ## starting points where Newton does NOT reach the (estimated) global min
 bad_starts <- subset(scan_res, miss_true_min)
@@ -913,7 +916,354 @@ endpts2[order(endpts2$end_f), ]
 ```
 
 
-## 2
+## Q2: Maximum likelihood
+
+### 2.1. Steepest ascent function
+
+See code in the appendix.
+
+```{r 2_1, echo=FALSE}
+#2.1
+
+# Steepest ascent with backtracking line search for ML estimation
+steepestasc_logit_count <- function(
+  x, y,
+  b0 = c(0, 0),
+  alpha0 = 1,
+  shrink = 0.5,
+  maxit = 5000,
+  max_backtrack = 60,
+  tol_par = 0.5e-5,
+  tol_rel = NULL,
+  tol_grad = NULL,
+  ls_type = c("increase", "armijo"),
+  armijo_c = 1e-4,
+  trace = FALSE
+) {
+  ls_type <- match.arg(ls_type)
+
+  n_g  <- 0L
+  n_gr <- 0L
+
+  g_logit <- function(b) {
+    n_g <<- n_g + 1L
+    eta <- b[1] + b[2] * x
+    sum(y * eta - log1p(exp(eta)))
+  }
+
+  grad_logit <- function(b) {
+    n_gr <<- n_gr + 1L
+    eta <- b[1] + b[2] * x
+    p   <- 1 / (1 + exp(-eta))
+    r   <- y - p
+    c(sum(r), sum(r * x))
+  }
+
+  b  <- b0
+  ll <- g_logit(b)
+
+  for (it in 1:maxit) {
+    gr <- grad_logit(b)
+    if (!all(is.finite(gr))) stop("Non-finite gradient encountered.")
+
+    d <- gr  # steepest ascent direction
+
+    alpha  <- alpha0
+    b_new  <- b + alpha * d
+    ll_new <- g_logit(b_new)
+
+    bt <- 0L
+    if (ls_type == "increase") {
+      while (ll_new < ll && bt < max_backtrack) {
+        alpha  <- alpha * shrink
+        b_new  <- b + alpha * d
+        ll_new <- g_logit(b_new)
+        bt <- bt + 1L
+      }
+    } else { # Armijo sufficient increase for maximization
+      rhs <- ll + armijo_c * alpha * sum(gr * d)
+      while (ll_new < rhs && bt < max_backtrack) {
+        alpha  <- alpha * shrink
+        b_new  <- b + alpha * d
+        ll_new <- g_logit(b_new)
+        rhs <- ll + armijo_c * alpha * sum(gr * d)
+        bt <- bt + 1L
+      }
+    }
+
+    if (bt >= max_backtrack) {
+      warning("Backtracking failed to find an acceptable step; stopping.")
+      break
+    }
+
+    step <- b_new - b
+
+    stop_par_abs <- max(abs(step)) < tol_par
+    stop_par_rel <- FALSE
+    if (!is.null(tol_rel)) {
+      stop_par_rel <- max(abs(step) / pmax(1, abs(b_new))) < tol_rel
+    }
+    stop_grad <- FALSE
+    if (!is.null(tol_grad)) {
+      stop_grad <- max(abs(gr)) < tol_grad
+    }
+
+    if (trace) {
+      cat(sprintf(
+        "it=%d  ll=%.10f  alpha=%.4g  step_inf=%.3e  b=(%.6f, %.6f)  ls=%s\n",
+        it, ll_new, alpha, max(abs(step)), b_new[1], b_new[2], ls_type
+      ))
+    }
+
+    b  <- b_new
+    ll <- ll_new
+
+    if (stop_par_abs || stop_par_rel || stop_grad) break
+  }
+
+  list(beta = b, logLik = ll, iterations = it, n_g = n_g, n_grad = n_gr, ls_type = ls_type)
+}
+```
+
+### 2.2. Computing the ML-estimator using two different backtracking methods
+
+```{r 2_2, echo=FALSE}
+#2.2
+
+x <- c(0,0,0, 0.1,0.1, 0.3,0.3, 0.9,0.9,0.9)
+y <- c(0,0,1, 0,1, 1,1, 0,1,1)
+b0=c(-0.2,1)
+methods <- c("increase", "armijo")
+res_list <- vector("list", length(methods))
+
+for (k in seq_along(methods)) {
+  m <- methods[k]
+  if (m == "armijo") {
+    res_list[[k]] <- steepestasc_logit_count(x, y, b0=b0, ls_type=m, armijo_c=0.1)
+  } else {
+    res_list[[k]] <- steepestasc_logit_count(x, y, b0=b0, ls_type=m)
+  }
+}
+
+results <- data.frame(
+  method = methods,
+  beta0  = sapply(res_list, function(r) r$beta[1]),
+  beta1  = sapply(res_list, function(r) r$beta[2]),
+  logLik = sapply(res_list, function(r) r$logLik),
+  iters  = sapply(res_list, function(r) r$iterations),
+  n_g    = sapply(res_list, function(r) r$n_g),
+  n_grad = sapply(res_list, function(r) r$n_grad)
+)
+
+results
+```
+
+where `n_g` is the number of function evaluations and `n_grad` is the number of gradient evaluations.
+
+We have implemented two different backtracking line search methods: 
+increase-only backtracking ("increase") and Armijo backtracking ("armijo"). Both methods choose a step size $\alpha>0$ for the update $b_{new} = b + \alpha d$, where in steepest ascent we used the direction $d = \nabla g(b)$. The increase-only method accepts the first tried $\alpha$ (starting from $\alpha_0$ and shrinking, e.g. $\alpha \leftarrow \rho\alpha$ with $0<\rho<1$) such that the log-likelihood does not decrease: $g(b + \alpha d) \ge g(b).$
+This ensures monotone improvement, but it does not require the improvement to be “large enough” relative to what the local linear model predicts. Armijo accepts the first $\alpha$ (again shrinking from $\alpha_0$) such that a *sufficient increase* condition holds:
+$g(b + \alpha d) \ge g(b) + c\,\alpha\, \nabla g(b)^T d, \quad c\in(0,1).$
+So Armijo compares the realized improvement to the predicted first-order improvement and requires at least a fraction $c$ of it. Armijo is typically stricter, it may backtrack more and thus use more function evaluations, especially when $c$ is not tiny. 
+
+### 2.3. Comparing with optim() output 
+
+```{r 2_3, echo=FALSE}
+#2.3
+# We maximize logLik, but optim minimizes -> use neg logLik and its gradient
+fn_negll <- function(b, x, y) {
+  eta <- b[1] + b[2] * x
+  -sum(y * eta - log1p(exp(eta)))
+}
+
+gr_negll <- function(b, x, y) {
+  eta <- b[1] + b[2] * x
+  p   <- 1 / (1 + exp(-eta))
+  r   <- y - p
+  -c(sum(r), sum(r * x))
+}
+
+methods <- c("BFGS", "Nelder-Mead")
+res <- vector("list", length(methods))
+
+for (k in seq_along(methods)) {
+  m <- methods[k]
+
+  if (m == "BFGS") {
+    # BFGS can use the supplied gradient
+    res[[k]] <- optim(
+      par = b0,
+      fn  = fn_negll, gr = gr_negll,
+      x = x, y = y,
+      method = m
+    )
+  } else {
+    # Nelder-Mead is derivative-free; no gradient evaluations
+    res[[k]] <- optim(
+      par = b0,
+      fn  = fn_negll,
+      x = x, y = y,
+      method = m,
+      control = list(warn.1d.NelderMead = FALSE)
+    )
+  }
+}
+
+tbl <- data.frame(
+  method   = methods,
+  beta0    = sapply(res, function(r) r$par[1]),
+  beta1    = sapply(res, function(r) r$par[2]),
+  logLik   = sapply(res, function(r) -r$value),
+  fn_evals = sapply(res, function(r) unname(r$counts[["function"]])),
+  gr_evals = sapply(res, function(r) unname(r$counts[["gradient"]])),
+  conv     = sapply(res, function(r) r$convergence)
+)
+
+tbl
+```
+
+We're observing slight differences in precision. Compared to our implementation, BGFS does significantly fewer function and gradient evaluations. BFGS needs far fewer evaluations because it uses curvature information to choose much better search directions than steepest ascent, so it typically reaches the optimum in many fewer outer iterations and often with fewer backtracking rejections per iteration. Nelder-Mead does more function evaluations but it does not calculate gradients.
+
+```{r 2_3_1, echo=FALSE}
+steepestasc_logit_path <- function(
+  x, y, b0=c(0,0),
+  alpha0=1, shrink=0.5, maxit=5000, max_backtrack=60,
+  tol_par=0.5e-5,
+  ls_type=c("increase","armijo"), armijo_c=1e-4
+) {
+  ls_type <- match.arg(ls_type)
+
+  g_logit <- function(b) {
+    eta <- b[1] + b[2]*x
+    sum(y*eta - log1p(exp(eta)))
+  }
+  grad_logit <- function(b) {
+    eta <- b[1] + b[2]*x
+    p <- 1/(1+exp(-eta))
+    r <- y - p
+    c(sum(r), sum(r*x))
+  }
+
+  b <- b0
+  ll <- g_logit(b)
+
+  path <- matrix(NA_real_, nrow=maxit+1, ncol=2)
+  path[1,] <- b
+
+  for (it in 1:maxit) {
+    gr <- grad_logit(b)
+    d  <- gr
+
+    alpha <- alpha0
+    b_new <- b + alpha*d
+    ll_new <- g_logit(b_new)
+
+    bt <- 0L
+    if (ls_type == "increase") {
+      while (ll_new < ll && bt < max_backtrack) {
+        alpha <- alpha*shrink
+        b_new <- b + alpha*d
+        ll_new <- g_logit(b_new)
+        bt <- bt + 1L
+      }
+    } else {
+      rhs <- ll + armijo_c*alpha*sum(gr*d)
+      while (ll_new < rhs && bt < max_backtrack) {
+        alpha <- alpha*shrink
+        b_new <- b + alpha*d
+        ll_new <- g_logit(b_new)
+        rhs <- ll + armijo_c*alpha*sum(gr*d)
+        bt <- bt + 1L
+      }
+    }
+    if (bt >= max_backtrack) break
+
+    step <- b_new - b
+    b <- b_new
+    ll <- ll_new
+    path[it+1,] <- b
+
+    if (max(abs(step)) < tol_par) break
+  }
+
+  path <- path[complete.cases(path), , drop=FALSE]
+  list(beta=b, logLik=ll, path=path)
+}
+
+# log-likelihood and negative for optim (optim minimizes)
+g_logit <- function(b, x, y) {
+  eta <- b[1] + b[2]*x
+  sum(y*eta - log1p(exp(eta)))
+}
+fn_negll <- function(b, x, y) -g_logit(b, x, y)
+gr_negll <- function(b, x, y) {
+  eta <- b[1] + b[2]*x
+  p <- 1/(1+exp(-eta))
+  r <- y - p
+  -c(sum(r), sum(r*x))
+}
+
+# Wrapper to record path
+bfgs_with_path <- function(b0, x, y) {
+  path <- matrix(numeric(0), ncol=2)
+  fn_wrap <- function(b, x, y) {
+    path <<- rbind(path, b)
+    fn_negll(b, x, y)
+  }
+  res <- optim(par=b0, fn=fn_wrap, gr=gr_negll, x=x, y=y, method="BFGS")
+  list(beta=res$par, logLik=-res$value, path=path)
+}
+
+sa  <- steepestasc_logit_path(x, y, b0=b0, ls_type="armijo", armijo_c=1e-4)
+bf  <- bfgs_with_path(b0, x, y)
+
+# Make a grid around the solution area
+all_pts <- rbind(sa$path, bf$path)
+b0_rng <- range(all_pts[,1])
+b1_rng <- range(all_pts[,2])
+
+b0_seq <- seq(b0_rng[1]-0.5, b0_rng[2]+0.5, length.out=120)
+b1_seq <- seq(b1_rng[1]-0.5, b1_rng[2]+0.5, length.out=120)
+
+Z <- outer(b0_seq, b1_seq, Vectorize(function(a0, a1) g_logit(c(a0,a1), x, y)))
+
+op <- par(mfrow=c(1,2), mar=c(4,4,3,1))
+
+contour(b0_seq, b1_seq, Z, nlevels=25,
+        xlab=expression(beta[0]), ylab=expression(beta[1]),
+        main="Steepest ascent + backtracking")                               
+lines(sa$path[,1], sa$path[,2], col="red", lwd=2)
+points(sa$path[,1], sa$path[,2], col="red", pch=16, cex=0.6)
+
+contour(b0_seq, b1_seq, Z, nlevels=25,
+        xlab=expression(beta[0]), ylab=expression(beta[1]),
+        main="optim BFGS")                                                   
+lines(bf$path[,1], bf$path[,2], col="blue", lwd=2)
+points(bf$path[,1], bf$path[,2], col="blue", pch=1, cex=0.6)
+
+par(op)
+```
+
+### 2.4. Comparing with glm() output 
+```{r 2_4, echo=FALSE}
+#2.4
+
+dat <- data.frame(y=y, x=x)
+fit_glm <- glm(y ~ x, family = binomial(link = "logit"), data = dat)
+
+b <- coef(fit_glm)
+ll <- as.numeric(logLik(fit_glm))
+
+glm_tbl <- data.frame(
+  method = "glm (binomial)",
+  beta0  = unname(b[1]),
+  beta1  = unname(b[2]),
+  logLik = ll
+)
+
+glm_tbl
+```
+The results seem to match the ones obtained with our function and optim().
 
 
 ## Appendix
