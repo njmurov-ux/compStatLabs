@@ -1,5 +1,6 @@
 ---
-title: "lab2"
+title: "Lab 2"
+author: "Aron Enström (aroen488), Sergey Volchkov (servo519)"
 output:
   pdf_document: default
   html_document: default
@@ -7,7 +8,10 @@ date: "2026-01-29"
 ---
 
 ## a
-```{r}
+```{r, echo=FALSE}
+#######
+# Q1
+#######
 f <- function(x, y) {
   sin(x+y) + (x-y)^2 - 1.5*x + 2.5*y + 1
   
@@ -18,7 +22,7 @@ f <- function(x, y) {
 # x <- y + 1
 # f(x, y)  
 
-f(3, 2)
+# f(3, 2)
 
 y <- seq(-3, 4, length.out = 500)
 x <- seq(-1.5, 4, length.out = 500)
@@ -32,7 +36,7 @@ contour(x = x, y = y, z = z, nlevels = 40)
 ```
 
 ## b
-```{r}
+```{r, echo=FALSE}
 #sin(x+y) + (x-y)^2 - 1.5*x + 2.5*y + 1
 
 g <- function(v) {
@@ -62,10 +66,14 @@ H(c(0,0))
 Newton is finding points where the functions gradient is 0, saddle, local minima or local maxima.
 x_new = x_old - H^-1 * grad
 
-```{r}
+```{r, echo=FALSE}
 
 
-Newton <- function(start, eps = 10^(-6), max_it = 50, x_boundry = c(-1.5, 4), y_boundry = c(-3, 4)) {
+Newton <- function(start, 
+                   eps = 10^(-6), 
+                   max_it = 50, 
+                   x_boundary = c(-1.5, 4), 
+                   y_boundary = c(-3, 4)) {
   L2 <- function(v) {
   sqrt(sum(v^2))
   
@@ -83,7 +91,8 @@ while (
   x_prev <- x_t
   
   
-  # For some values the hessian was singular, solving this by adding a small lambda * I to the hessian to get around the issue.
+  # For some values the hessian was singular, solving this by adding a small lambda * I 
+  # to the hessian to get around the issue.
   #browser()
   H_inv <- tryCatch({solve(H(x_prev))}, 
            error = function(x) {solve(H(x_prev) + eps * diag(length(x_t)))})
@@ -93,13 +102,18 @@ while (
 }
 
 
-if (x_t[1] >= x_boundry[1] & x_t[1] <= x_boundry[2] & x_t[2] >= y_boundry[1] & x_t[2] <= y_boundry[2]) {
+if (x_t[1] >= x_boundary[1] & x_t[1] <= x_boundary[2] 
+    & x_t[2] >= y_boundary[1] & x_t[2] <= y_boundary[2]) {
   
   eigen_vals <- eigen(H(x_t))$values
-  cat("Start:", start, ", Itterations:", itterations, ", solution:", x_t, ", function value:", f(x_t[1], x_t[2]), "\neigen_values:", eigen_vals, "\n\n")
+  cat("Start:", start, ", 
+      Iterations:", itterations, ", 
+      solution:", x_t, ", 
+      function value:", f(x_t[1], x_t[2]), 
+      "\neigen_values:", eigen_vals, "\n\n")
 } else {
 
-  cat("Solution outside the boundry", "\n\n")
+  cat("Solution outside the boundary", "\n\n")
 
 }
 
@@ -112,7 +126,7 @@ if (x_t[1] >= x_boundry[1] & x_t[1] <= x_boundry[2] & x_t[2] >= y_boundry[1] & x
 
 ## d
 
-```{r}
+```{r, echo=FALSE}
 grid <- expand.grid(x = seq(-1.5, 4, length.out = 3), y = seq(-3, 4, length.out = 3))
 
 for (i in 1:nrow(grid)) {
@@ -133,7 +147,10 @@ As the function is bounded we in general check the value at all local minima asw
 
 ## a
 
-```{r}
+```{r, echo=FALSE}
+#######
+# Q2
+#######
 # creating the data
 x <- c(0, 0, 0, 0.1, 0.1, 0.3, 0.3, 0.9, 0.9, 0.9)
 y <- c(0, 0, 1, 0 ,1, 1, 1, 0, 1, 1)
@@ -142,7 +159,7 @@ g <- function(v) {
   b0 <- v[1]
   b1 <- v[2]
   
-  sum(  y * log( 1 / (1 + exp(-b0 -b1*x)) ) + (1 - y) * log( 1 - ( 1 / (1 + exp(-b0 -b1*x)) ) )  )
+  sum(y * log( 1 / (1 + exp(-b0 -b1*x)) ) + (1 - y) * log( 1 - ( 1 / (1 + exp(-b0 -b1*x)) ) ))
   
 }
 
@@ -169,10 +186,12 @@ gradient <- function(x)
 
 ```
 
-```{r}
+```{r, echo=FALSE}
 
 
-GD_optimizer <- function(x0, x = c(0, 0, 0, 0.1, 0.1, 0.3, 0.3, 0.9, 0.9, 0.9), y = c(0, 0, 1, 0 ,1, 1, 1, 0, 1, 1),
+GD_optimizer <- function(x0, 
+                         x = c(0, 0, 0, 0.1, 0.1, 0.3, 0.3, 0.9, 0.9, 0.9), 
+                         y = c(0, 0, 1, 0 ,1, 1, 1, 0, 1, 1),
                          backtracking_shrinkage = 0.5) {
   # Produce a contour plot; define first a grid where function is evaluated
 x1grid <- seq(-2, 2.5, by=0.05)
@@ -187,7 +206,7 @@ for (j in 1:dx2)
   gx[i,j] <- g(c(x1grid[i], x2grid[j]))
 }
 mgx <- matrix(gx, nrow=dx1, ncol=dx2)
-contour(x1grid, x2grid, mgx, nlevels=34)  # Note: For other functions g, you might need to choose another nlevels-value to get a good impression of the function 
+contour(x1grid, x2grid, mgx, nlevels=34)
 
 #Steepest ascent function:
 steepestasc <- function(x0 = x0, eps=1e-6, alpha0=1)
@@ -258,7 +277,7 @@ We set the change beteween xt and xtold to be smaller than 10^-6 so we can trust
 With different backtracking methods we get way more function calls if the shrinkage factor for alpha is larger there needs to be more calls made. 0.3 and 0.5 perform similarly. 
 
 ## c
-```{r}
+```{r, echo=FALSE}
 
 # optim minimizes so we try to maximize by multiplying by -1 via fnscale
 optim(c(-0.2, 1), fn = g, gr = gradient, method = "BFGS", control = list(fnscale = -1))
@@ -272,7 +291,7 @@ They converge way faster and therefore use fewer function-calls. Nelder-Mead con
 Our result from b: -0.00935(9121)  1.26282(1823) precise to the 5th decimal. BFGS appears to have 4 decimals of precision and nelson meader appears to have 3. Digging into the documentation we find that the relative tolerance is 1e-8, so the amount of decimals depends on the size of the root.
 
 ## d
-```{r}
+```{r, echo=FALSE}
 
 model <- glm(y ~ x, family = "binomial")
 
@@ -283,6 +302,21 @@ a$coefficients[, 1]
 
 It matches well with our optimized results for the first 5 decimals.
 
-# Appendix
+\newpage
 
-![Analytical solution Q1](C:/Users/arone/Desktop/Compstat/lab2.jpg)
+# Appendix 1 - Analytical solution Q1
+
+
+```{r echo=FALSE, fig.cap="Analytical solution Q1", out.width="60%"}
+knitr::include_graphics("./data/q1_solution.jpg")
+```
+
+\newpage
+
+# Appendix 2 - Codes
+
+```{r, ref.label=setdiff(knitr::all_labels(), c('setup')), echo=TRUE, eval=FALSE}
+
+
+
+```
