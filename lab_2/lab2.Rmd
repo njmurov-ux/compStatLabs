@@ -13,16 +13,21 @@ f <- function(x, y) {
   
 }
 
+
+# y <- -pi/3 - 0.5
+# x <- y + 1
+# f(x, y)  
+
 f(3, 2)
 
-x <- y <- seq(-5, 5, length.out = 500)
-
+y <- seq(-3, 4, length.out = 500)
+x <- seq(-1.5, 4, length.out = 500)
 # outer creates all combinations of x, y
 # applying f to the matrix based on x and y
 z <- outer(x, y, f)
 
 
-contour(x = x, y = y, z = z)
+contour(x = x, y = y, z = z, nlevels = 40)
 
 ```
 
@@ -54,13 +59,13 @@ H(c(0,0))
 ```
 
 ## c
-Newton is like this for steepest ascent
+Newton is finding points where the functions gradient is 0, saddle, local minima or local maxima.
 x_new = x_old - H^-1 * grad
 
 ```{r}
 
 
-Newton <- function(start, eps = 10^(-6), max_it = 50) {
+Newton <- function(start, eps = 10^(-6), max_it = 50, x_boundry = c(-1.5, 4), y_boundry = c(-3, 4)) {
   L2 <- function(v) {
   sqrt(sum(v^2))
   
@@ -79,6 +84,7 @@ while (
   
   
   # For some values the hessian was singular, solving this by adding a small lambda * I to the hessian to get around the issue.
+  #browser()
   H_inv <- tryCatch({solve(H(x_prev))}, 
            error = function(x) {solve(H(x_prev) + eps * diag(length(x_t)))})
 
@@ -87,10 +93,18 @@ while (
 }
 
 
-eigen_vals <- eigen(H(x_t))$values
-cat("Start:", start, ", Itterations:", itterations, ", solution:", x_t, ", function value:", f(x_t[1], x_t[2]), "\neigen_values:", eigen_vals, "\n\n")
+if (x_t[1] >= x_boundry[1] & x_t[1] <= x_boundry[2] & x_t[2] >= y_boundry[1] & x_t[2] <= y_boundry[2]) {
+  
+  eigen_vals <- eigen(H(x_t))$values
+  cat("Start:", start, ", Itterations:", itterations, ", solution:", x_t, ", function value:", f(x_t[1], x_t[2]), "\neigen_values:", eigen_vals, "\n\n")
+} else {
+
+  cat("Solution outside the boundry", "\n\n")
+
+}
 
 
+  return(x_t)
 }
 
 
@@ -99,19 +113,21 @@ cat("Start:", start, ", Itterations:", itterations, ", solution:", x_t, ", funct
 ## d
 
 ```{r}
-Newton(c(-20, -20))
-Newton(c(100, -100))
-Newton(c(100, 100))
-Newton(c(0, 0))
-Newton(c(5, 5))
-Newton(c(-100, 100))
-Newton(c(20, 20))
+grid <- expand.grid(x = seq(-1.5, 4, length.out = 3), y = seq(-3, 4, length.out = 3))
+
+for (i in 1:nrow(grid)) {
+  v <- c(grid[i, 1], grid[i, 2])
+  Newton(v)
+}
 
 ```
 ## e
 If v^THv < 0 we have a maximum. Loose proof sketch: v^T(Hv) is a dotproduct, Hv is the gradient in that direction. If the gradient, (which points in towards the highest ascent direction), points in the opposite direction as our step, then we are going downwhill. So if all our steps are downhill, negative definite hessian means local maximum. Positive definite means local minimum. If all eigen values are negative we have a local maxima, all are positive means local minimi. Both means saddle point. We see we only found saddle points or local minima in our optimization.
 
-Setting x = y in our function reveals that if y decreases the function will keep decreasing linearly in y. So the function has to global minimum.
+This optimization searches unbounded but filters out solutions that lie outside the bounds. Starting points are a grid of 9 points inside the constraints. All points where the gradient is 0 were found, see appendix for an analytical solution. 
+
+As the function is bounded we in general check the value at all local minima aswell as the boundary-points to obtain the minima given our constraints. Given the contour plot the minima does not lie on the boundary. 
+
 
 # Q 2.
 
@@ -251,9 +267,9 @@ optim(c(-0.2, 1), fn = g, method = "Nelder-Mead", control = list(fnscale = -1))
 
 
 ```
-They converge way faster and therefore use fewer function-calls. Nelson-meader converging faster is interesting as it has no theoretical convergence speed. 
+They converge way faster and therefore use fewer function-calls. Nelder-Mead converging faster is interesting as it has no theoretical convergence speed. 
 
-our result from b: -0.00935(9121)  1.26282(1823) precise to the 5th decimal. BFGS appears to have 4 decimals of precision and nelson meader appears to have 3. Digging into the documentation we find that the relative tolerance is 1e-8, so the amount of decimals depends on the size of the root.
+Our result from b: -0.00935(9121)  1.26282(1823) precise to the 5th decimal. BFGS appears to have 4 decimals of precision and nelson meader appears to have 3. Digging into the documentation we find that the relative tolerance is 1e-8, so the amount of decimals depends on the size of the root.
 
 ## d
 ```{r}
@@ -266,3 +282,7 @@ a$coefficients[, 1]
 ```
 
 It matches well with our optimized results for the first 5 decimals.
+
+# Appendix
+
+![Analytical solution Q1](C:/Users/arone/Desktop/Compstat/lab2.jpg)
