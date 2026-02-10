@@ -7,11 +7,15 @@ date: "2026-02-05"
 ---
 
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
 # Q1
 
 ## a
 Lets choose a uniform distribution instead of a normal envelope for simplicity. The triangle density needs an envelope in [-1, 1], elsewhere it is 0. It has a maxima of 1 so we need to scale our uniform envelope by 2. Our waste will be 1/2, we enclose a function with area 1 with a function of area 2.
-```{r}
+```{r 1_1_1, echo=FALSE, warning=FALSE}
 
 tri_fun <- function(x) {
   
@@ -37,7 +41,7 @@ plot(seq(-2, 2, length.out = 1000), y)
 
 
 
-```{r}
+```{r 1_1_2, echo=FALSE, warning=FALSE}
 
 set.seed(123)
 n <- 10000
@@ -69,7 +73,7 @@ hist(sample)
 Waste matches the theoretical waste.
 
 ## b
-```{r}
+```{r 1_2, echo=FALSE, warning=FALSE}
 #code from slides
 u <- runif(1000)
 y <- 1 - sqrt(1-u)
@@ -93,7 +97,7 @@ hist(sample)
 
 ## c
 
-```{r}
+```{r 1_3, echo=FALSE, warning=FALSE}
 
 set.seed(12345)
 sample <- c()
@@ -110,37 +114,28 @@ hist(sample)
 ```
 
 ## d
-U1-U2 uses 2 x n random numbers. The inverse cdf also uses 2 x n but performs more calculations. Rejection sampling has some variance, it uses 2 x n on average with a lazy chosen envelope, with a better envelope it is the clear winner.
+U1-U2 uses 2 x n random numbers. The inverse cdf also uses 2 x n but performs more calculations. Rejection sampling has some variance, it uses 2 x n + the waste and extra calculations for evaluating the density. U1-U2 is the most efficient.
 
 # Q2
 
 ## a
 
 
-```{r}
+```{r 2_1_1, echo=FALSE, warning=FALSE}
 
 
 system.time({
 
-n <- 100000
-
-sample1 <- c()
-sample2 <- c()
+n <- 10000000
 
 
-for (i in 1:n) {
-  A <- runif(1, 0, 2*pi)
-  U <- runif(1)
-  Y <- sqrt(-2 * log(U))
-  
-  X1 <- Y * cos(A)
-  X2 <- Y * sin(A)
-  
-  sample1 <- c(sample1, X1)
-  sample2 <- c(sample2, X2)
 
-  
-}
+A <- runif(n, 0, 2*pi)
+U <- runif(n)
+Y <- sqrt(-2 * log(U))
+sample1 <- Y * cos(A)
+sample2 <- Y * sin(A)
+
 
 })
 
@@ -149,17 +144,16 @@ hist(sample1)
 
 ```
 
-I use a smaller n as my computer is too slow.
 Box muller gives us a standard normal X ~ N(0, I)
 To get $N(\mu, \Sigma)$ we apply $Y = A^TX + \mu$ where A^T comes from the cholesky decomposition of $\Sigma$ 
 
-```{r}
+```{r 2_1_2, echo=FALSE, warning=FALSE}
 A_t <- chol(matrix(c(0.6, 0, 0, 0.6), 2, 2))
 A_t %*% t(A_t)
 
 ```
 
-```{r}
+```{r 2_1_3, echo=FALSE, warning=FALSE}
 X <- rbind(sample1, sample2) |> as.matrix()
 dim(X)
 
@@ -171,7 +165,7 @@ hist(Y[1, ])
 ```
 ## b
 The variance is 0.6 so we take the square root.
-```{r}
+```{r 2_2, echo=FALSE, warning=FALSE}
 system.time({
 
 x1 <- rnorm(n, 0, sqrt(0.6))
@@ -184,7 +178,7 @@ X <- rbind(x1, x2)
 This was much faster than in a. 
 
 ## c
-```{r}
+```{r 2_3, echo=FALSE, warning=FALSE}
 library(mvtnorm)
 
 normal_bivariate <- function(n) {
@@ -225,3 +219,9 @@ set.seed(12345)
 normal_bivariate(10000)
 ```
 Here with a larger n we more clearly see that the density of points drops of further from the means, thanks to the alpha in the plot. We see 2 circles centered around the means which is to be expected.
+
+
+# Appendix
+```{r, ref.label=setdiff(knitr::all_labels(), c('setup')), echo=TRUE, eval=FALSE}
+
+```
