@@ -16,7 +16,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r 1_1, echo=FALSE, warning=FALSE}
 #####
-# 1.1
+# 1(a)
 #####
 
 ## Target: f(x) = (1/(2.4*10^6)) * x^4 * exp(-x/10), x > 0
@@ -143,7 +143,7 @@ With the standard deviation of 1 and not discarding the samples obtained during 
 
 ```{r 1_2, echo=FALSE, warning=FALSE}
 #####
-# 1.2
+# 1(b)
 #####
 set.seed(1)
 prop_chi <- make_chisq_floor_proposal()
@@ -155,7 +155,7 @@ x_chi <- out_chi$x_post
 
 ```{r 1_3, echo=FALSE, warning=FALSE}
 #####
-# 1.3
+# 1(c)
 #####
 set.seed(1)
 prop_norm <- make_norm_rw_proposal(sd = 8)
@@ -171,7 +171,7 @@ For `sd = 8` and the burn-in period of 2000, we are getting much better picture 
 
 ```{r 1_5, echo=FALSE, warning=FALSE}
 #####
-# 1.5
+# 1(e)
 #####
 summ_tab <- data.frame(
   Chain  = c("Normal RW (sd=1)", "Normal RW (sd=8)", "Chi-square df=floor(x)+1"),
@@ -183,7 +183,6 @@ summ_tab <- data.frame(
              median(x_chi,      na.rm = TRUE))
 )
 
-## Print nicely in R Markdown
 knitr::kable(summ_tab, digits = 3, caption = "Mean and median of MCMC samples")
 ```
 ### f. Theoretical E(X)
@@ -198,6 +197,287 @@ We can also double-check the median in R:
 #####
 qgamma(0.5, shape=5, scale=10)
 ```
+
+## Q2: 
+
+
+### a. Ellipse plot
+
+```{r 2_1, echo=FALSE, warning=FALSE}
+#####
+# 2(a)
+#####
+w  <- 1.999
+
+a <- 1 - w^2/4
+xmax <- 1/sqrt(a)
+xv <- seq(-xmax, xmax, length.out = 4000)
+
+disc <- pmax(0, 1 - a * xv^2)  # guard against tiny negatives from rounding
+ylo  <- -(w/2) * xv - sqrt(disc)
+yhi  <- -(w/2) * xv + sqrt(disc)
+
+plot(xv, ylo, type = "n",
+     xlab = expression(x[1]), ylab = expression(x[2]), las = 1,
+     asp = 1,
+     xlim = range(xv), ylim = range(c(ylo, yhi)))
+
+lines(xv, ylo, lwd = 2, col = 8)
+lines(xv, yhi, lwd = 2, col = 8)
+
+```
+
+
+### b. Conditional distributions
+
+We have a bivariate random vector $X=(X_1,X_2)$ that is uniform on the region
+$$
+R_w=\{(x_1,x_2)\in\mathbb{R}^2:\; x_1^2+w x_1 x_2+x_2^2<1\},\qquad |w|<2.
+$$
+
+If $(X_1,X_2)$ is uniform on a 2D region $R$, then the conditional distribution of $X_1$ given $X_2=x_2$ is uniform on the horizontal slice $T_{x_2}=\{x_1:(x_1,x_2)\in R\}$ (and similarly with the roles swapped). 
+Equivalently, the conditional density is constant on that slice and equals $1/\mathrm{length}(T_{x_2})$. 
+
+#### Conditional of $X_1$ given $X_2=x_2$
+
+Fix $x_2$. The constraint $x_1^2+w x_1 x_2+x_2^2<1$ is a quadratic inequality in $x_1$:
+$$
+x_1^2+(w x_2)\,x_1+(x_2^2-1)<0.
+$$
+
+Its discriminant is
+$$
+\Delta_1(x_2)=(w x_2)^2-4(x_2^2-1)=4-(4-w^2)x_2^2.
+$$
+
+So the slice is non-empty iff $\Delta_1(x_2)>0$, i.e.
+$$
+|x_2|<\frac{2}{\sqrt{4-w^2}}.
+$$
+
+When $\Delta_1(x_2)>0$, the admissible interval for $x_1$ is
+$$
+\ell_1(x_2)=\frac{-w x_2-\sqrt{\Delta_1(x_2)}}{2},
+\qquad
+u_1(x_2)=\frac{-w x_2+\sqrt{\Delta_1(x_2)}}{2}.
+$$
+
+Therefore,
+$$
+X_1\mid (X_2=x_2)\sim \mathrm{Unif}\big(\ell_1(x_2),u_1(x_2)\big), \quad \text{for } |x_2|<\frac{2}{\sqrt{4-w^2}}.
+$$
+because a uniform distribution on an interval has constant density on that interval.
+
+The conditional density can be written as
+$$
+f_{X_1\mid X_2}(x_1\mid x_2)=
+\begin{cases}
+\frac{1}{u_1(x_2)-\ell_1(x_2)}=\frac{1}{\sqrt{\Delta_1(x_2)}}, & \ell_1(x_2)\le x_1\le u_1(x_2),\\
+0, & \text{otherwise}.
+\end{cases}
+$$
+using that a $\mathrm{Unif}(a,b)$ density is $1/(b-a)$ on $[a,b]$.
+
+Similarly,
+
+$$
+X_2\mid (X_1=x_1)\sim \mathrm{Unif}\big(\ell_2(x_1),u_2(x_1)\big), \quad \text{for } |x_1|<\frac{2}{\sqrt{4-w^2}}.
+$$
+by the same “uniform on a slice” principle.
+
+
+### c. Gibbs sampling
+
+```{r 2_3, echo=FALSE, warning=FALSE}
+#####
+# 2(c)
+#####
+w <- 1.999
+tol <- 1e-12
+
+Q <- function(x1, x2, w) x1^2 + w * x1 * x2 + x2^2
+
+bounds_x1_given_x2 <- function(x2, w, tol = 1e-12) {
+  Delta <- 4 - (4 - w^2) * x2^2
+  if (Delta < -tol) stop("Infeasible x2 (outside support): discriminant < 0.")
+  Delta <- max(0, Delta)
+  s <- sqrt(Delta)
+  lo <- (-w * x2 - s) / 2
+  hi <- (-w * x2 + s) / 2
+  c(lower = min(lo, hi), upper = max(lo, hi))
+}
+
+bounds_x2_given_x1 <- function(x1, w, tol = 1e-12) {
+  Delta <- 4 - (4 - w^2) * x1^2
+  if (Delta < -tol) stop("Infeasible x1 (outside support): discriminant < 0.")
+  Delta <- max(0, Delta)
+  s <- sqrt(Delta)
+  lo <- (-w * x1 - s) / 2
+  hi <- (-w * x1 + s) / 2
+  c(lower = min(lo, hi), upper = max(lo, hi))
+}
+
+gibbs_Rw <- function(n = 1000, burn = 2000, w = 1.999, x0 = c(0, 0), tol = 1e-12) {
+  x1 <- x0[1]; x2 <- x0[2]
+  if (Q(x1, x2, w) >= 1) stop("Initial state x0 must satisfy Q(x0) < 1.")
+
+  out <- matrix(NA_real_, nrow = n, ncol = 2)
+  colnames(out) <- c("X1", "X2")
+
+  for (i in seq_len(burn + n)) {
+    b1 <- bounds_x1_given_x2(x2, w, tol)
+    x1 <- runif(1, min = b1["lower"], max = b1["upper"])
+
+    b2 <- bounds_x2_given_x1(x1, w, tol)
+    x2 <- runif(1, min = b2["lower"], max = b2["upper"])
+
+    # Safety: if rounding nudges us outside, scale back inside (Q(c x)=c^2 Q(x))
+    q <- Q(x1, x2, w)
+    if (!is.finite(q)) stop("Non-finite Q encountered.")
+    if (q >= 1) {
+      cscale <- sqrt((1 - 10 * tol) / q)
+      x1 <- x1 * cscale
+      x2 <- x2 * cscale
+    }
+
+    if (i > burn) out[i - burn, ] <- c(x1, x2)
+  }
+  out
+}
+
+set.seed(1)
+samp <- gibbs_Rw(n = 1000, burn = 5000, w = w)
+
+a <- 1 - w^2 / 4
+xmax <- 1 / sqrt(a)
+xv <- seq(-xmax, xmax, length.out = 4000)
+disc <- pmax(0, 1 - a * xv^2)
+ylo  <- -(w / 2) * xv - sqrt(disc)
+yhi  <- -(w / 2) * xv + sqrt(disc)
+
+plot(xv, ylo, type = "n",
+     xlab = expression(x[1]), ylab = expression(x[2]),
+     asp = 1, las = 1,
+     xlim = range(xv), ylim = range(c(ylo, yhi)))
+lines(xv, ylo, lwd = 2, col = 8)
+lines(xv, yhi, lwd = 2, col = 8)
+points(samp[, "X1"], samp[, "X2"], pch = 16, cex = 0.5, col = rgb(0, 0, 0, 0.35))
+
+# Estimate P(X1 > 0)
+p_hat <- mean(samp[, "X1"] > 0)
+cat("P(X1 > 0):", p_hat)
+
+set.seed(2)
+reps <- 5
+p_hats <- replicate(reps, {
+  s <- gibbs_Rw(n = 1000, burn = 5000, w = w)
+  mean(s[, "X1"] > 0)
+})
+cat("P(X1 > 0) based on repeated sampling:", p_hats)
+
+```
+By symmetry, the true value of $P(X1 > 0)$ should be 0.5.
+
+### d. Why the results are worse than for w=1.8
+
+Gibbs sampling is less successful at $w=1.999$ because the target region becomes extremely elongated (nearly “degenerate”), so $X_1$ and $X_2$ are very strongly coupled and single-coordinate updates move only tiny distances along the long, thin direction—leading to very slow mixing and high autocorrelation.
+
+### e. Results for transformed distribution U = (U1,U2) = (X1 - X2,X1 + X2)
+
+```{r 2_5, echo=FALSE, warning=FALSE}
+#####
+# 2(e)
+#####
+w    <- 1.999
+n    <- 1000
+burn <- 5000
+tol  <- 1e-12
+
+Qx <- function(x1, x2, w) x1^2 + w * x1 * x2 + x2^2
+Qu <- function(u1, u2, w) (2 - w) * u1^2 + (2 + w) * u2^2
+
+X_from_U <- function(u1, u2) c(x1 = (u2 + u1) / 2, x2 = (u2 - u1) / 2)
+U_from_X <- function(x1, x2) c(u1 = x1 - x2, u2 = x1 + x2)
+
+a1 <- sqrt(4 / (2 - w))  # max |u1|
+a2 <- sqrt(4 / (2 + w))  # max |u2|
+
+tt <- seq(0, 2 * pi, length.out = 4000)
+u1_boundary <- a1 * cos(tt)
+u2_boundary <- a2 * sin(tt)
+
+plot(u1_boundary, u2_boundary, type = "l", lwd = 2, col = 8,
+     xlab = expression(U[1]), ylab = expression(U[2]),
+     asp = 1, las = 1)
+
+bounds_u1_given_u2 <- function(u2, w, tol = 1e-12) {
+  denom <- (2 - w)
+  num   <- 4 - (2 + w) * u2^2
+  if (num < -tol) stop("Infeasible u2 (outside support).")
+  num <- max(0, num)
+  r <- sqrt(num / denom)
+  c(lower = -r, upper = r)
+}
+
+bounds_u2_given_u1 <- function(u1, w, tol = 1e-12) {
+  denom <- (2 + w)
+  num   <- 4 - (2 - w) * u1^2
+  if (num < -tol) stop("Infeasible u1 (outside support).")
+  num <- max(0, num)
+  r <- sqrt(num / denom)
+  c(lower = -r, upper = r)
+}
+
+gibbs_U <- function(n = 1000, burn = 5000, w = 1.999, u0 = c(0, 0), tol = 1e-12) {
+  u1 <- u0[1]; u2 <- u0[2]
+  if (Qu(u1, u2, w) >= 4) stop("Initial u0 must satisfy (2-w)u1^2 + (2+w)u2^2 < 4.")
+
+  out <- matrix(NA_real_, nrow = n, ncol = 2)
+  colnames(out) <- c("U1", "U2")
+
+  for (i in seq_len(burn + n)) {
+    b1 <- bounds_u1_given_u2(u2, w, tol)
+    u1 <- runif(1, min = b1["lower"], max = b1["upper"])
+
+    b2 <- bounds_u2_given_u1(u1, w, tol)
+    u2 <- runif(1, min = b2["lower"], max = b2["upper"])
+
+    # Numerical safety: nudge strictly inside if needed (scale (u1,u2) since Qu is quadratic)
+    q <- Qu(u1, u2, w)
+    if (!is.finite(q)) stop("Non-finite quadratic form encountered.")
+    if (q >= 4) {
+      cscale <- sqrt((4 - 10 * tol) / q)
+      u1 <- u1 * cscale
+      u2 <- u2 * cscale
+    }
+
+    if (i > burn) out[i - burn, ] <- c(u1, u2)
+  }
+  out
+}
+
+set.seed(1)
+Usamp <- gibbs_U(n = n, burn = burn, w = w)
+
+points(Usamp[, "U1"], Usamp[, "U2"], pch = 16, cex = 0.5, col = rgb(0, 0, 0, 0.35))
+
+## Estimate P(X1 > 0) using U
+# X1 = (U2 + U1)/2, so event X1 > 0 is equivalent to U1 + U2 > 0.
+p_hat_U <- mean((Usamp[, "U1"] + Usamp[, "U2"]) > 0)
+cat("P(X1 > 0) as P((U2 + U1)/2 > 0):", p_hat_U)
+
+set.seed(123)
+
+reps <- 10
+p_hats_U <- replicate(reps, {
+  U <- gibbs_U(n = 1000, burn = 5000, w = w)
+  mean((U[, "U1"] + U[, "U2"]) > 0)
+})
+
+cat("P(X1 > 0) as P((U2 + U1)/2 > 0) from multiple runs:", p_hats_U)
+```
+We can see that the results are much closer to the true value of $P(X1 > 0)$ which is equal to 0.5. The estimates are closer to 0.5 because the transformation to $U_1=X_1-X_2,U_2=X_1+X_2$ rotates the geometry by 45 degrees so the support becomes an axis-aligned ellipse, and then coordinate-wise Gibbs updates are aligned with the ellipse’s principal axes so the chain moves efficiently.
+
 
 ## Appendix
 
