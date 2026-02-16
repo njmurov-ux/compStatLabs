@@ -1,0 +1,358 @@
+---
+title: "lab3"
+output:
+  pdf_document: default
+  html_document: default
+date: "2026-02-05"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+```
+
+
+# Q1
+
+## a
+```{r 1_1}
+f <- function(x) {
+  
+
+  result <- x^4*exp(-x/10)/(2.4*10^6)
+  result[x<0] <- 0
+  return(result)
+   
+}
+
+n <- 10000
+burnin <- 300
+
+Xt <- c(1)
+
+i <- 1
+acc <- 0
+
+set.seed(543)
+while (i < (n + burnin)) {
+  U <- runif(1)
+  x_star <- rnorm(1, Xt[i], 1)
+  
+  
+  MH1 <-  f(x_star) / f(Xt[i])
+  MH2 <- dnorm(Xt[i], mean = x_star) / dnorm(x_star, mean = Xt[i])
+    
+  MH <- MH1 * MH2
+  
+  if (U < MH) {
+    acc <- acc + 1
+    Xt[i + 1] <- x_star
+  } else {
+    Xt[i + 1] <- Xt[i]
+  }
+  
+  
+  i <- i + 1
+}
+
+acc_rate <- acc / i
+
+print(acc_rate)
+
+```
+
+
+We thin the chain as we have markovian dependence, remove every 2nd observation as we have dependent samples. We can see in the ACF plot that we have not reached a markov chain. 
+```{r 1_1_2}
+
+par(mfrow = c(2, 3))
+plot(Xt[1:300], t = "l")
+plot(Xt[1:10000], t = "l")
+
+
+Xt <- Xt[-c(1:burnin)]
+XtA <- Xt
+
+
+acf(Xt, 60)
+
+thin_index <- seq(1, to = length(Xt), by = 10)
+Xt <- Xt[thin_index]
+
+acf(Xt, 60)
+
+hist(Xt)
+curve(f(x),  0, 200)
+
+```
+The chain seems to need a burin as it is not close to the initial value, looking at the density plot x=1 is part of a low porobability region. Xt spans from 0 to 20, looking at the density the MCMC chain hasn't explored the density at all. We still have alot of autocorrelation aswell. The acceptance rate is very high, 98\%
+
+## b
+
+```{r 1_b}
+
+Xt <- c(1)
+
+i <- 1
+acc <- 0
+
+set.seed(543)
+while (i < (n + burnin)) {
+  U <- runif(1)
+  x_star <- rchisq(1, floor(Xt[i] + 1))
+  
+  
+  MH1 <-  f(x_star) / f(Xt[i])
+  MH2 <- dchisq(Xt[i], df = floor(x_star + 1)) / dchisq(x_star, df = floor(Xt[i] + 1))
+    
+  MH <- MH1 * MH2
+  
+  if (U < MH) {
+    acc <- acc + 1
+    Xt[i + 1] <- x_star
+  } else {
+    Xt[i + 1] <- Xt[i]
+  }
+  
+  
+  i <- i + 1
+}
+
+acc_rate <- acc / i
+
+print(acc_rate)
+
+```
+```{r ploting2}
+
+
+par(mfrow = c(2, 3))
+plot(Xt[1:300], t = "l")
+plot(Xt[1:10000], t = "l")
+
+
+Xt <- Xt[-c(1:burnin)]
+XtB <- Xt
+
+
+acf(Xt, 60)
+
+thin_index <- seq(1, to = length(Xt), by = 10)
+Xt <- Xt[thin_index]
+acf(Xt, 60)
+
+hist(Xt)
+curve(f(x),  0, 200)
+
+```
+The histogram looks very good. The autocorrelation with thinning every 10th observation doesn't seem to make the sample independent, we would need a larger thinning constant but then we throw away alot of our compute. Lets try a distribution with a larger stepsize, normal with larger variance.
+
+```{r 1_c}
+
+
+Xt <- c(1)
+
+i <- 1
+acc <- 0
+
+sd <- 20
+
+set.seed(543)
+while (i < (n + burnin)) {
+  U <- runif(1)
+  x_star <- rnorm(1, Xt[i], sd)
+  
+  
+  MH1 <-  f(x_star) / f(Xt[i])
+  MH2 <- dnorm(Xt[i], mean = x_star, sd = sd) / dnorm(x_star, mean = Xt[i], sd = sd)
+    
+  MH <- MH1 * MH2
+  
+  if (U < MH) {
+    acc <- acc + 1
+    Xt[i + 1] <- x_star
+  } else {
+    Xt[i + 1] <- Xt[i]
+  }
+  
+  
+  i <- i + 1
+}
+
+acc_rate <- acc / i
+
+print(acc_rate)
+
+
+```
+```{r ploting3}
+
+
+par(mfrow = c(2, 3))
+plot(Xt[1:300], t = "l")
+plot(Xt[1:10000], t = "l")
+
+
+Xt <- Xt[-c(1:burnin)]
+XtC <- Xt
+
+acf(Xt, 60)
+
+thin_index <- seq(1, to = length(Xt), by = 10)
+Xt <- Xt[thin_index]
+acf(Xt, 60)
+
+hist(Xt)
+curve(f(x),  0, 200)
+
+```
+
+## c + d
+Here the autocorrelation is removed, we still remove 1-71\% of samples + 90\% of samples which is very inefficient. The point of this exploration was to find some combination of parameters that achieved a random sample, but it still needs to be optimized. In a) we had too low of a step size. Both b) and c) got good histograms, b) struggled with autocorrelation.
+
+## e + f
+```{r}
+
+print("Part a:")
+cat("Mean: ", mean(XtA), "\n")
+cat("Median: ", median(XtA), "\n")
+
+print("Part b:")
+cat("Mean: ", mean(XtB), "\n")
+cat("Median: ", median(XtB), "\n")
+
+print("Part c:")
+cat("Mean: ", mean(XtC), "\n")
+cat("Median: ", median(XtC), "\n")
+
+
+
+
+```
+Theoretical values are: 
+
+$$f(x) \propto x^{\alpha - 1}\cdot e^{-x/\theta} => E[X] = \alpha \theta$$
+Our mean is therefore 5*10 = 50. Part b was closest and part c was also close.
+
+# Q2
+## a
+
+```{r 2_1}
+
+w  <- 1.999
+
+f_x2 <- function(x1, sign = 1) {
+  -w*x1/2 + sign * sqrt((w*x1/2)^2 - x1^2 + 1)
+  
+}
+
+x1 <- seq(-40, 40, by=0.01)
+x2 <- c(f_x2(x1, 1), f_x2(x1, -1))
+x1 <- c(x1, x1)
+
+plot(x1, x2, type = "l")
+
+```
+
+## b
+The conditional distribution of x1|x2 will still be uniform but on the interval:
+$$x_2 \in - \frac{wx_1}{2} \pm \sqrt{\frac{(wx_1)^2}{4} - x_1^2 + 1} $$
+The problem is symmetrical for c2|x1.
+
+## c + d
+```{r 2_3}
+n <- 1000
+burnin <- 300
+samples <- matrix(NA, nrow=n + burnin, ncol=2)
+
+set.seed(123456)
+x1 <- 0
+for (i in 1:(n+burnin)) {
+  
+  if (i == 1) {
+    x1 <- 0    
+  } else {
+    min_x1 <- f_x2(x2, -1)
+    max_x1 <- f_x2(x2, 1)
+    x1 <- runif(1, min_x1, max_x1)
+  }
+  
+  min_x2 <- f_x2(x1, -1)
+  max_x2 <- f_x2(x1, 1)
+  x2 <- runif(1, min_x2, max_x2)
+  
+  samples[i, ] <- c(x1, x2)
+}
+
+samples <- samples[-(1:300), ]
+
+plot(samples[, 1], samples[, 2], xlim = c(-30, 30), ylim = c(-30, 30))
+
+print(mean(samples[, 1] > 0))
+
+```
+
+The true result would be 50\%. The whole ellipse doesnt seem to be explored, this makes sense as the ellipse is so thin, x1 and x2 moves so slowly through the ellipse, so if the initial value for x1 is not from the target distribution it will require a long burnin for the final sample to be. 
+
+## e
+We get the following boundary:
+$$4 = (2+w)\cdot U_1^2 + (2-w)\cdot U_1^2 $$
+If we scale the U1 and U2 axis by sqrt(2+w) and sqrt(2-w) we see we have a circle. Therefore we have an ellipse here. As w is close to 2 the ellipse is still stretched alot, the difference in the axises is a factor of 44.7.  
+
+```{r 2_5}
+
+w  <- 1.999
+
+f_u1 <- function(u2, sign = 1) {
+  sign*sqrt((4 - (2-w)*u2^2) / (2+w))
+}
+
+f_u2 <- function(u1, sign = 1) {
+  sign*sqrt((4 - (2+w)*u1^2) / (2-w))
+}
+
+u1 <- seq(-40, 40, by=0.01)
+u2 <- c(f_u2(u1, 1), f_u2(u1, -1))
+u1 <- c(u1, u1)
+
+plot(u1, u2, type = "l")
+
+```
+```{r 2_5_2}
+
+n <- 1000
+burnin <- 300
+samples <- matrix(NA, nrow=n + burnin, ncol=2)
+
+set.seed(1234567)
+u1 <- 0
+for (i in 1:(n+burnin)) {
+  
+  if (i == 1) {
+    u1 <- 0    
+  } else {
+    min_u1 <- f_u1(u2, -1)
+    max_u1 <- f_u1(u2, 1)
+    u1 <- runif(1, min_u1, max_u1)
+  }
+  
+  min_u2 <- f_u2(u1, -1)
+  max_u2 <- f_u2(u1, 1)
+  u2 <- runif(1, min_u2, max_u2)
+  
+  samples[i, ] <- c(u1, u2)
+}
+
+samples <- samples[-(1:300), ]
+
+plot(samples[, 1], samples[, 2], xlim = c(-30, 30), ylim = c(-30, 30))
+
+print(mean((samples[, 1] + samples[, 2])/2 > 0))
+
+
+```
+Here we converge way faster. For part c we were not even close to 50\%. The variance for this estimate seems to be large.
+# Appendix
+```{r, ref.label=setdiff(knitr::all_labels(), c('setup')), echo=TRUE, eval=FALSE}
+
+```
