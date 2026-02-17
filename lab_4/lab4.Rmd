@@ -61,8 +61,8 @@ print(acc_rate)
 
 ```
 
+We can see in the ACF plot that we have not reached a markov chain. 
 
-We thin the chain as we have markovian dependence, remove every 2nd observation as we have dependent samples. We can see in the ACF plot that we have not reached a markov chain. 
 ```{r 1_1_2}
 
 par(mfrow = c(2, 3))
@@ -74,18 +74,13 @@ Xt <- Xt[-c(1:burnin)]
 XtA <- Xt
 
 
-acf(Xt, 60)
-
-thin_index <- seq(1, to = length(Xt), by = 10)
-Xt <- Xt[thin_index]
-
-acf(Xt, 60)
+acf(Xt, 1000)
 
 hist(Xt)
 curve(f(x),  0, 200)
 
 ```
-The chain seems to need a burn-in as it is not close to the initial value, looking at the density plot x=1 is part of a low probability region. Xt spans from 0 to 20, looking at the density the MCMC chain hasn't explored the density at all. We still have a lot of autocorrelation as well. The acceptance rate is very high, 98\%
+The chain seems to need a burn-in as it moves far away from the initial value, looking at the density plot x=1 is part of a low probability region. Xt spans from 0 to 20, looking at the density the MCMC chain hasn't explored the density at all. We still have a lot of autocorrelation as well, judging from the trace plot it is because the step size is too small. The acceptance rate is very high, 98\%.
 
 ## b
 
@@ -123,6 +118,7 @@ acc_rate <- acc / i
 print(acc_rate)
 
 ```
+
 ```{r ploting2}
 
 
@@ -135,17 +131,14 @@ Xt <- Xt[-c(1:burnin)]
 XtB <- Xt
 
 
-acf(Xt, 60)
+acf(Xt, 1000)
 
-thin_index <- seq(1, to = length(Xt), by = 10)
-Xt <- Xt[thin_index]
-acf(Xt, 60)
 
 hist(Xt)
 curve(f(x),  0, 200)
 
 ```
-The histogram looks very good. The autocorrelation with thinning every 10th observation doesn't seem to make the sample independent, we would need a larger thinning constant but then we throw away alot of our compute. Lets try a distribution with a larger stepsize, normal with larger variance.
+The histogram looks very good. Lets try a distribution with a larger stepsize, normal with larger variance, $X \sim N(\sigma = 20,\ \mu = 0)$.
 
 ```{r 1_c}
 
@@ -196,11 +189,8 @@ plot(Xt[1:10000], t = "l")
 Xt <- Xt[-c(1:burnin)]
 XtC <- Xt
 
-acf(Xt, 60)
+acf(Xt, 1000)
 
-thin_index <- seq(1, to = length(Xt), by = 10)
-Xt <- Xt[thin_index]
-acf(Xt, 60)
 
 hist(Xt)
 curve(f(x),  0, 200)
@@ -208,7 +198,7 @@ curve(f(x),  0, 200)
 ```
 
 ## c + d
-Here the autocorrelation is removed, we still remove 1-71\% of samples + 90\% of samples which is very inefficient. The point of this exploration was to find some combination of parameters that achieved a random sample, but it still needs to be optimized. In a) we had too low of a step size. Both b) and c) got good histograms, b) struggled with autocorrelation.
+This looks as good as in b), we have lower acceptance rate but the correlation drops faster. In a) we had too low of a step size. In c) we more effectively traverse the distribution. The chi-squared proposal still seems to be the best in terms of the speed of convergence.The chi-square proposal is state-dependent, e.g. $Y \mid X_t=x \sim \chi^2_{\lfloor x \rfloor + 1}$, so its typical proposal size changes with the current location of the chain. This often yields larger, more effective moves when the chain is in higher-density regions away from 0, so the chain can reach and traverse the typical set in fewer iterations than a fixed-scale random-walk. Both b) and c) got good histograms. 
 
 ## e + f
 ```{r}
