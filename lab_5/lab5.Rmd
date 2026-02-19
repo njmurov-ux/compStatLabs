@@ -38,7 +38,7 @@ hist(X)
 
 ```
 ## b
-Say our power for a test for a given mu is p. We estimate p by $$\frac{\#number\ of\ rejections}{repetions} = \frac{\#number\ of\ rejections}{n} = \hat{p} $$ $$\#number\ of\ rejections \sim bin(n, p),\ Var(\hat{p}) = p(1-p)/n$$
+Say our power for a test for a given mu is p. We estimate p by $$\frac{\#number\ of\ rejections}{repetitions} = \frac{\#number\ of\ rejections}{n} = \hat{p} $$ $$\#number\ of\ rejections \sim bin(n, p),\ Var(\hat{p}) = p(1-p)/n$$
 
 The plots below show $\sqrt{Var(\hat{p}))}$ for different n.
 
@@ -58,7 +58,7 @@ curve(std_error(x, 50), c(0, 1))
 curve(std_error(x, 1000), c(0, 1))
 
 ```
-Say we have standard error = 0.015 $= \sigma$, then our power estimate varies by roughly $3\sigma = 0.045$. It depends on what precision we are after. As our task is not heavy computationally, lets just increase the repetions alot, say to 5000.
+Say we have standard error = 0.015 $= \sigma$, then our power estimate varies by roughly $3\sigma = 0.045$. It depends on what precision we are after. As our task is not heavy computationally, lets just increase the repetitions a lot, say to 5000.
 
 ```{r 1b2}
 curve(std_error(x, 5000), c(0, 1))
@@ -154,12 +154,12 @@ t_test$conf.int
 ```
 
 ## c
-BCa works better when the distribution of our parameter is skewed which we can see in the above. The BCa interval is shifted to the right compared to the percentile bootstrap we calculated and the interval assuming normality. Normality is probably a strong asumption  here. The travel-time is around 15-23 minutes.
+BCa works better when the distribution of our parameter is skewed which we can see in the above. The BCa interval is shifted to the right compared to the percentile bootstrap we calculated and the interval assuming normality. Normality is probably a strong assumption  here. The travel-time is around 15-23 minutes.
 
 
 ## d
-A reasonal estimate is the difference in mean of each group.
-We break the signal between the travel time and if it is in the afternoon or evening. If we do that, what variance in group mean difference can we expect given how varied our data is? In the plot below we see that less than 5\% of differences are as large as our observed difference leadning us to conclude that the traveltime is larger in the evenings.
+A reasonable estimate is the difference in mean of each group.
+We break the signal between the travel time and if it is in the afternoon or evening. If we do that, what variance in group mean difference can we expect given how varied our data is? In the plot below we see that less than 5\% of differences are as large as our observed difference leading us to conclude that the travel time is larger in the evenings.
 ```{r 2d}
 data2 <- c(15.0, 13.0, 12.9, 14.4, 15.1, 13.7)
 
