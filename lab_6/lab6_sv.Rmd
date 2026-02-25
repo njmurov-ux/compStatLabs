@@ -1,0 +1,193 @@
+---
+title: "Lab 6"
+author: "Aron Enström (aroen488), Sergey Volchkov (servo519)"
+date: "2026-02-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Q1
+
+### a-d
+
+```{r 1_1, echo=FALSE, warning=FALSE}
+#####
+# 1(a-d)
+#####
+# emalg3 <- function(dat, eps=0.000001){
+#   n      <- length(dat)
+#   pi     <- matrix(NA, nrow=n, ncol=3)  # initialize responsibilities for 3 groups
+# 
+#   # starting values
+#   p1     <- 1/3
+#   p2     <- 1/3
+#   p3     <- 1 - p1 - p2
+# 
+#   s0     <- sd(dat)*2/3
+#   sigma1 <- s0
+#   sigma2 <- s0
+#   sigma3 <- s0
+# 
+#   m0     <- mean(dat)
+#   mu1    <- m0 - s0
+#   mu2    <- m0
+#   mu3    <- m0 + s0
+# 
+#   pv     <- c(p1, p2, p3, mu1, mu2, mu3, sigma1, sigma2, sigma3)
+# 
+#   cc     <- eps + 100
+#   while (cc > eps){
+#     pv1 <- pv
+# 
+#     ### E step ###
+#     for (j in 1:n){
+#       a1 <- p1 * dnorm(dat[j], mean=mu1, sd=sigma1)
+#       a2 <- p2 * dnorm(dat[j], mean=mu2, sd=sigma2)
+#       a3 <- p3 * dnorm(dat[j], mean=mu3, sd=sigma3)
+#       den <- a1 + a2 + a3
+# 
+#       pi[j,1] <- a1 / den
+#       pi[j,2] <- a2 / den
+#       pi[j,3] <- a3 / den
+#     }
+# 
+#     ### M step ###
+#     p1 <- mean(pi[,1])
+#     p2 <- mean(pi[,2])
+#     p3 <- mean(pi[,3])
+# 
+#     mu1 <- sum(pi[,1] * dat) / (p1 * n)
+#     mu2 <- sum(pi[,2] * dat) / (p2 * n)
+#     mu3 <- sum(pi[,3] * dat) / (p3 * n)
+# 
+#     sigma1 <- sqrt( sum(pi[,1] * (dat - mu1) * (dat - mu1)) / (p1 * n) )
+#     sigma2 <- sqrt( sum(pi[,2] * (dat - mu2) * (dat - mu2)) / (p2 * n) )
+#     sigma3 <- sqrt( sum(pi[,3] * (dat - mu3) * (dat - mu3)) / (p3 * n) )
+# 
+#     pv <- c(p1, p2, p3, mu1, mu2, mu3, sigma1, sigma2, sigma3)
+#     cc <- t(pv - pv1) %*% (pv - pv1)
+#   }
+# 
+#   pv
+# }
+
+emalgK <- function(dat, K=3, eps=1e-6, tiny=1e-12, maxit=10000, keep_history=TRUE){
+  n <- length(dat)
+  pik <- matrix(NA_real_, nrow=n, ncol=K)
+
+  # initialization
+  p     <- rep(1/K, K)
+  s0    <- sd(dat) * 2/3
+  sigma <- rep(s0, K)
+  m0    <- mean(dat)
+  mu    <- seq(m0 - s0, m0 + s0, length.out=K)
+
+  loglik <- function(){
+    ll <- 0
+    for (j in 1:n){
+      s <- 0
+      for (k in 1:K){
+        s <- s + p[k] * dnorm(dat[j], mean=mu[k], sd=sigma[k])
+      }
+      ll <- ll + log(max(s, tiny))
+    }
+    ll
+  }
+
+  # history
+  if (keep_history){
+    phist     <- matrix(NA_real_, nrow=maxit, ncol=K)
+    muhist    <- matrix(NA_real_, nrow=maxit, ncol=K)
+    sigmahist <- matrix(NA_real_, nrow=maxit, ncol=K)
+    llhist    <- rep(NA_real_, maxit)
+  }
+
+  ll_old <- -Inf
+  it <- 0
+
+  repeat {
+    it <- it + 1
+
+    ### E step ###
+    for (j in 1:n){
+      num <- numeric(K)
+      for (k in 1:K){
+        num[k] <- p[k] * dnorm(dat[j], mean=mu[k], sd=sigma[k])
+      }
+      den <- sum(num)
+      if (!is.finite(den) || den < tiny) den <- tiny
+      for (k in 1:K){
+        pik[j,k] <- num[k] / den
+      }
+    }
+
+    ### M step ###
+    Nk <- colSums(pik)
+    p <- Nk / n
+    p <- pmax(p, tiny); p <- p / sum(p)
+
+    for (k in 1:K){
+      mu[k] <- sum(pik[,k] * dat) / Nk[k]
+      v <- sum(pik[,k] * (dat - mu[k]) * (dat - mu[k])) / Nk[k]
+      sigma[k] <- sqrt(max(v, tiny))
+    }
+
+    ll_new <- loglik()
+
+    if (keep_history){
+      phist[it,]     <- p
+      muhist[it,]    <- mu
+      sigmahist[it,] <- sigma
+      llhist[it]     <- ll_new
+    }
+
+    # stopping: relative logLik improvement
+    rel_impr <- (ll_new - ll_old) / max(abs(ll_old), 1)
+    if (is.finite(rel_impr) && rel_impr < eps) break
+    if (it >= maxit) break
+    ll_old <- ll_new
+  }
+
+  if (!keep_history){
+    return(list(p=p, mu=mu, sigma=sigma, it=it, logLik=ll_new))
+  }
+
+  phist     <- phist[1:it,, drop=FALSE]
+  muhist    <- muhist[1:it,, drop=FALSE]
+  sigmahist <- sigmahist[1:it,, drop=FALSE]
+  llhist    <- llhist[1:it]
+
+  list(p=p, mu=mu, sigma=sigma, it=it, logLik=ll_new,
+       phist=phist, muhist=muhist, sigmahist=sigmahist, llhist=llhist)
+}
+
+load("threepops.Rdata")
+length(dat3p)
+
+hist(dat3p, breaks=20, col="grey80", main="Histogram of dat3p", xlab="dat3p")
+
+fit <- emalgK(dat3p, K=3, eps=1e-6)
+cat("p:     ", paste(fit$p, collapse=", "), "\n")
+cat("mu:    ", paste(fit$mu, collapse=", "), "\n")
+cat("sigma: ", paste(fit$sigma, collapse=", "), "\n")
+
+par(mfrow=c(3,1), mar=c(4,4,2,1))
+
+matplot(fit$phist, type="l", lty=1, xlab="Iteration", ylab="p_k")
+matplot(fit$muhist, type="l", lty=1, xlab="Iteration", ylab="mu_k")
+matplot(fit$sigmahist, type="l", lty=1, xlab="Iteration", ylab="sigma_k")
+
+plot(fit$llhist, type="l", xlab="Iteration", ylab="log-likelihood")
+```
+
+## Appendix
+
+
+```{r, ref.label=setdiff(knitr::all_labels(), c('setup')), echo=TRUE, eval=FALSE}
+
+
+```
+
