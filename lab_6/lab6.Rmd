@@ -114,7 +114,7 @@ emalg(data*1000)$pv
 ```
 The parameters are on such different scales, using cosine similarity if mu1 changes by 10 it is going to overpower a change of 0.01 in p2. 
 $cos(v1, v2)$ denotes the cosine of the angle between v1 and v2.
-1 - cos as cos = 1 when the vecotors are perfectly alligned. 
+1 - cos as cos = 1 when the vectors are perfectly aligned. 
 $$cc = \frac{(1-cos(v_{p}, v1_{p}), (1-cos(v_{\mu}, v1_{\mu}), (1-cos(v_{\sigma}, v1_{\sigma}))}{3}$$
 ```{r 1c}
 data <- load(file = "threepops.Rdata")
@@ -123,6 +123,7 @@ emalg(dat3p)$pv
 
 ```
 It looks like they converged
+
 ```{r 1d}
 em <- emalg(dat3p, eps=0.000001)
 
@@ -208,80 +209,70 @@ The proposal is a uniform mask, for each individual we swap them out with probab
 
 SA <- function(prob_keep = 0.5, alpha = 0.8, beta = 0.5, temp = 4000, mj = 10, it = 100) {
   set.seed(123)
-index <- sample(fullset, 22)
-
-diff <- c()
-
-it <- it
-
-x_t <- index
-
-prob_keep <- prob_keep
-
-alpha <- alpha
-beta <- beta
-
-mj <- mj
-temp <- temp
-
-min_function <- crit(bankdata, index)
-min_x <- x_t
-
-function_x_t <- min_function
-
-for (j in 1:it) {
-  if (j %% (round(it/5)) == 0) {
-    print(j)
+  index <- sample(fullset, 22)
+  
+  diff <- c()
+  
+  x_t <- index
+  
+  min_function <- crit(bankdata, index)
+  min_x <- x_t
+  
+  function_x_t <- min_function
+  
+  for (j in 1:it) {
+    if (j %% (round(it/5)) == 0) {
+      print(j)
+    }
+    for (i in 1:mj) {
+    
+    swapped_individuals <- prob_keep < runif(22)
+    
+    if (sum(swapped_individuals) == 0) {
+      x_star <- x_t
+    } else {
+      not_swapped <- x_t[!swapped_individuals]
+      # swapping individuals that got randomly kicked.
+      x_star <- c(not_swapped, sample(setdiff(fullset, x_t), sum(swapped_individuals))) 
+    }
+    
+    function_x_star <- crit(bankdata, x_star)
+    if (function_x_star < min_function) {
+      min_function <- function_x_star
+      min_x <- x_star
+    }
+    
+    delta <- function_x_t - function_x_star
+    hx <- exp(delta/temp)
+    diff <- c(diff, delta) 
+    
+    U <- runif(1)
+      if (U < hx) {
+        x_t <- x_star
+        function_x_t <- function_x_star
+        #otherwise we do not accept x_t
+      } 
+    }
+    temp <- alpha * temp
+    mj <- max(1, floor(beta * mj))
   }
-  for (i in 1:mj) {
   
-  swapped_individuals <- prob_keep < runif(22)
+  print("Starting function value:")
+  print(crit(bankdata, index))
   
-  if (sum(swapped_individuals) == 0) {
-    x_star <- x_t
-  } else {
-    not_swapped <- x_t[!swapped_individuals]
-    # swapping individuals that got randomly kicked.
-    x_star <- c(not_swapped, sample(setdiff(fullset, x_t), sum(swapped_individuals))) 
-  }
+  index <- min_x
   
-  function_x_star <- crit(bankdata, x_star)
-  if (function_x_star < min_function) {
-    min_function <- function_x_star
-    min_x <- x_star
-  }
+  plot(bankdata[-index, 1], bankdata[-index, 2], main = "Best individuals tested")
+  points(bankdata[index, 1], bankdata[index, 2], col = "red")
   
-  delta <- function_x_t - function_x_star
-  hx <- exp(delta/temp)
-  diff <- c(diff, delta) 
+  print("Best function value:")
+  print(min_function)
   
-  U <- runif(1)
-    if (U < hx) {
-      x_t <- x_star
-      function_x_t <- function_x_star
-      #otherwise we do not accept x_t
-    } 
-  }
-  temp <- alpha * temp
-  mj <- max(1, floor(beta * mj))
-}
-
-print("Starting function value:")
-print(crit(bankdata, index))
-
-index <- min_x
-
-plot(bankdata[-index, 1], bankdata[-index, 2], main = "Best individuals tested")
-points(bankdata[index, 1], bankdata[index, 2], col = "red")
-
-print("Best function value:")
-print(min_function)
-
-print("Average diff:")
-print(mean(diff))
-hist(diff, main = "Delta in function")
-
-return(min_x)
+  print("Average diff:")
+  print(mean(diff))
+  hist(diff, main = "Delta in function")
+  
+  return(min_x)
 }
 
 
@@ -313,7 +304,7 @@ SA(prob_keep = 0.7, alpha = 0.7, beta = 1.03, mj = 50, temp = 100000, it = 50)
 
 ```
 
-Lower swaprate seems better.
+Lower swap rate seems better.
 ```{r 2c4}
 set.seed(12345)
 SA(prob_keep = 0.95, alpha = 0.7, beta = 1.05, mj = 25, temp = 100000, it = 50)
