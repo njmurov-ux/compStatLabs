@@ -183,6 +183,428 @@ matplot(fit$sigmahist, type="l", lty=1, xlab="Iteration", ylab="sigma_k")
 plot(fit$llhist, type="l", xlab="Iteration", ylab="log-likelihood")
 ```
 
+## Q2
+
+### a
+
+```{r 2_1, echo=FALSE, warning=FALSE}
+#####
+# 2(a)
+#####
+load("bankdata.Rdata")
+length(bankdata)
+colnames(bankdata)
+source("bankcrit.R")
+
+## Ensure numeric matrix with column names
+X <- as.matrix(bankdata)
+storage.mode(X) <- "double"
+
+set.seed(1)
+n <- nrow(X)
+k <- 22
+sel <- sample.int(n, k)
+
+## Plot all clients + highlight the selected 22
+make_plot <- function (X, sel, title) {
+  plot(
+    X[, 1], X[, 2],
+    pch = 16, cex = 0.5, col = grDevices::adjustcolor("grey30", alpha.f = 0.35),
+    xlab = colnames(X)[1], ylab = colnames(X)[2],
+    main = title
+  )
+  points(X[sel, 1], X[sel, 2], pch = 19, cex = 1.2, col = "red")
+  points(X[sel, 1], X[sel, 2], pch = 1,  cex = 1.6, col = "black")
+  text(X[sel, 1], X[sel, 2], labels = seq_along(sel), pos = 3, cex = 0.7, col = "black")  
+}
+
+make_plot(X, sel, sprintf("Bank clients (n=%d) with random starting set (k=%d)", n, k))
+cat("crit(starting selection) =", crit(bankdata, sel), "\n")
+
+
+```
+
+### b
+
+```{r 2_2, echo=FALSE, warning=FALSE}
+#####
+# 2(b)
+#####
+crit_fast <- function(dat, subs) {
+  X <- as.matrix(dat)
+  M <- X[subs, , drop = FALSE]          
+  x2 <- rowSums(X^2)                    # n
+  m2 <- rowSums(M^2)                    # k
+  D2 <- outer(x2, m2, "+") - 2 * (X %*% t(M))   # n x k
+  sum(sqrt(pmax(D2, 0))[cbind(seq_len(nrow(X)), max.col(-D2))]) # nearest per row
+}
+
+# dist_mat <- function(X) {
+#   X <- as.matrix(X)
+#   x2 <- rowSums(X^2)
+#   D2 <- outer(x2, x2, "+") - 2 * (X %*% t(X))
+#   sqrt(pmax(D2, 0))
+# }
+
+sa_minimize_crit <- function(dat, k = 22,
+                             init_subs = NULL,
+                             n_iter = 20000,
+                             T0 = NULL,
+                             cooling = c("geometric", "log"),
+                             alpha = 0.999,        # for geometric cooling
+                             seed = 1,
+                             verbose_every = 1000) {
+
+  cooling <- match.arg(cooling)
+  set.seed(seed)
+
+  n <- nrow(dat)
+  if (n < k) stop("k must be <= nrow(dat).")
+  if (ncol(dat) != 2) stop("dat must have exactly 2 columns (age, balance).")
+
+  # initial subset
+  if (is.null(init_subs)) {
+    subs <- sample.int(n, k)
+  } else {
+    subs <- as.integer(init_subs)
+    if (length(subs) != k) stop("init_subs must have length k.")
+    if (any(subs < 1 | subs > n)) stop("init_subs has out-of-range indices.")
+    if (anyDuplicated(subs)) stop("init_subs must contain unique indices.")
+  }
+
+  cur_cost <- crit_fast(dat, subs)
+
+  # When T0 is not supplied, we estimate a sensible scale for T0 by:
+  # 1) proposing many random 1-for-1 swap moves around the current subset,
+  # 2) measuring their cost increase delta (only positive/uphill deltas),
+  # 3) setting T0 to the median positive delta (robust "typical uphill move size"),
+  # so early iterations accept some uphill moves at a non-negligible rate.
+  if (is.null(T0)) {
+    trial_deltas <- numeric(200)
+    subs_set <- rep(FALSE, n); subs_set[subs] <- TRUE
+    for (t in seq_along(trial_deltas)) {
+      out <- sample(subs, 1)
+      inn <- sample(which(!subs_set), 1)
+      cand <- subs
+      cand[cand == out] <- inn
+      trial_deltas[t] <- crit_fast(dat, cand) - cur_cost
+    }
+    pos <- trial_deltas[trial_deltas > 0]
+    T0 <- if (length(pos)) stats::median(pos) else 1
+  }
+
+  # tracking best solution found
+  best_subs <- subs
+  best_cost <- cur_cost
+
+  # membership vector for fast "in subset?" checks
+  in_sub <- rep(FALSE, n); in_sub[subs] <- TRUE
+
+  temp <- T0
+  cost_trace   <- numeric(n_iter)
+  temp_trace   <- numeric(n_iter)
+  accept_trace <- integer(n_iter)  # 1 if accepted, 0 otherwise
+
+  for (it in 1:n_iter) {
+
+    # record temperature used for the decision this iteration
+    temp_trace[it] <- temp
+
+    # propose a SWAP: remove one in-sub, add one out-of-sub
+    out_id <- sample(subs, 1)
+    in_id  <- sample(which(!in_sub), 1)
+
+    cand_subs <- subs
+    cand_subs[cand_subs == out_id] <- in_id
+
+    cand_cost <- crit_fast(dat, cand_subs)
+    dE <- cand_cost - cur_cost  # >0 means worse (since we minimize)
+
+    accept <- FALSE
+    if (dE <= 0) {
+      accept <- TRUE
+    } else {
+      if (stats::runif(1) < exp(-dE / temp)) accept <- TRUE  # Metropolis criterion
+    }
+
+    if (accept) {
+      accept_trace[it] <- 1L
+
+      subs <- cand_subs
+      cur_cost <- cand_cost
+
+      in_sub[out_id] <- FALSE
+      in_sub[in_id]  <- TRUE
+
+      if (cur_cost < best_cost) {
+        best_cost <- cur_cost
+        best_subs <- subs
+      }
+    }
+
+    # cooling schedule
+    if (cooling == "geometric") {
+      temp <- temp * alpha
+    } else { # logarithmic
+      temp <- T0 / log(it + 2)
+    }
+
+    cost_trace[it] <- cur_cost
+
+    if (verbose_every > 0 && it %% verbose_every == 0) {
+      cat(sprintf("iter %d | T=%.4g | cur=%.6g | best=%.6g | acc_rate=%.3f\n",
+                  it, temp_trace[it], cur_cost, best_cost, mean(accept_trace[1:it])))
+    }
+  }
+
+  list(best_subs = best_subs,
+       best_cost = best_cost,
+       last_subs = subs,
+       last_cost = cur_cost,
+       T0 = T0,
+       trace = cost_trace,
+       temp_trace = temp_trace,
+       accept_trace = accept_trace)
+}
+
+# sa_minimize_crit_cached <- function(dat, k = 22,
+#                              init_subs = NULL,
+#                              n_iter = 20000,
+#                              T0 = NULL,
+#                              cooling = c("geometric", "log"),
+#                              alpha = 0.999,
+#                              seed = 1,
+#                              verbose_every = 1000) {
+# 
+#   cooling <- match.arg(cooling)
+#   set.seed(seed)
+# 
+#   X <- as.matrix(dat)
+#   n <- nrow(X)
+# 
+#   # Precompute distances once (fastest variant)
+#   dist_mat <- function(X) {
+#     x2 <- rowSums(X^2)
+#     D2 <- outer(x2, x2, "+") - 2 * (X %*% t(X))
+#     sqrt(pmax(D2, 0))
+#   }
+#   D <- dist_mat(X)
+# 
+#   # initial subset
+#   if (is.null(init_subs)) {
+#     subs <- sample.int(n, k)
+#   } else {
+#     subs <- as.integer(init_subs)
+#     if (length(subs) != k) stop("init_subs must have length k.")
+#     if (any(subs < 1 | subs > n)) stop("init_subs has out-of-range indices.")
+#     if (anyDuplicated(subs)) stop("init_subs must contain unique indices.")
+#   }
+#   subs <- sort(subs)
+# 
+#   in_sub <- rep(FALSE, n); in_sub[subs] <- TRUE
+# 
+#   compute_state <- function(subs) {
+#     Ds <- D[, subs, drop = FALSE]      # n x k
+#     ord <- apply(Ds, 1, order)
+#     i1 <- ord[1, ]; i2 <- ord[2, ]
+#     m1 <- subs[i1]
+#     d1 <- Ds[cbind(seq_len(n), i1)]
+#     d2 <- Ds[cbind(seq_len(n), i2)]
+#     list(m1 = m1, d1 = d1, d2 = d2, cost = sum(d1))
+#   }
+# 
+#   st <- compute_state(subs)
+#   m1 <- st$m1; d1 <- st$d1; d2 <- st$d2
+#   cur_cost <- st$cost
+# 
+#   # choose T0 (same logic you had, but using compute_state)
+#   if (is.null(T0)) {
+#     trial_deltas <- numeric(200)
+#     for (t in seq_along(trial_deltas)) {
+#       out <- sample(subs, 1)
+#       inn <- sample(which(!in_sub), 1)
+#       cand <- subs
+#       cand[cand == out] <- inn
+#       cand <- sort(cand)
+#       trial_deltas[t] <- compute_state(cand)$cost - cur_cost
+#     }
+#     pos <- trial_deltas[trial_deltas > 0]
+#     T0 <- if (length(pos)) stats::median(pos) else 1
+#   }
+# 
+#   best_subs <- subs
+#   best_cost <- cur_cost
+# 
+#   temp <- T0
+# 
+#   cost_trace   <- numeric(n_iter)
+#   temp_trace   <- numeric(n_iter)
+#   accept_trace <- integer(n_iter)
+# 
+#   for (it in 1:n_iter) {
+# 
+#     out_id <- sample(subs, 1)
+#     in_id  <- sample(which(!in_sub), 1)
+# 
+#     d_to_new <- D[, in_id]
+#     base_after_removal <- ifelse(m1 == out_id, d2, d1)
+#     new_d1 <- pmin(base_after_removal, d_to_new)
+#     cand_cost <- sum(new_d1)
+#     dE <- cand_cost - cur_cost
+# 
+#     accept <- FALSE
+#     if (dE <= 0) {
+#       accept <- TRUE
+#     } else {
+#       if (stats::runif(1) < exp(-dE / temp)) accept <- TRUE
+#     }
+# 
+#     if (accept) {
+#       subs[subs == out_id] <- in_id
+#       subs <- sort(subs)
+#       in_sub[out_id] <- FALSE
+#       in_sub[in_id]  <- TRUE
+# 
+#       st <- compute_state(subs)
+#       m1 <- st$m1; d1 <- st$d1; d2 <- st$d2
+#       cur_cost <- st$cost
+# 
+#       if (cur_cost < best_cost) {
+#         best_cost <- cur_cost
+#         best_subs <- subs
+#       }
+#       accept_trace[it] <- 1L
+#     }
+# 
+#     # record traces BEFORE updating temp (so temp_trace aligns with accept decision)
+#     cost_trace[it] <- cur_cost
+#     temp_trace[it] <- temp
+# 
+#     if (cooling == "geometric") {
+#       temp <- temp * alpha
+#     } else { # log
+#       temp <- T0 / log(it + 2)
+#     }
+# 
+#     if (verbose_every > 0 && it %% verbose_every == 0) {
+#       cat(sprintf("iter %d | T=%.4g | cur=%.6g | best=%.6g | acc_rate=%.3f\n",
+#                   it, temp_trace[it], cur_cost, best_cost, mean(accept_trace[1:it])))
+#     }
+#   }
+# 
+#   list(best_subs = best_subs,
+#        best_cost = best_cost,
+#        last_subs = subs,
+#        last_cost = cur_cost,
+#        T0 = T0,
+#        trace = cost_trace,
+#        temp_trace = temp_trace,
+#        accept_trace = accept_trace)
+# }
+T0=100
+alpha=0.9995
+tm_old <- system.time({
+  res <- sa_minimize_crit(bankdata, k=22, n_iter=50000,
+                              cooling="geometric", T0=T0, alpha=alpha, seed=1)
+})
+
+# tm_new <- system.time({
+#   res <- sa_minimize_crit_cached(bankdata, k=22, n_iter=3000,
+#                                      cooling="geometric", alpha=alpha, seed=1)
+# })
+
+# rbind(old = tm_old, new = tm_new)
+tm_old
+cat("Starting temperature:", res$T0)
+res$best_cost
+res$best_subs
+make_plot(X, res$best_subs, sprintf("Geometric cooling with alpha=%.4f, T0=%d. Cost:%.1f", alpha, T0, res$best_cost))
+
+# plot(res$temp_trace, res$accept_trace,
+#      xlab = "Temperature", ylab = "Accepted (0/1)",
+#      main = "SA acceptances vs temperature", pch = 16, cex = 0.4)
+
+# Rolling acceptance rate (window = 200)
+w <- 200
+acc_roll <- stats::filter(res$accept_trace, rep(1/w, w), sides = 1)
+plot(res$temp_trace, acc_roll, type="l",
+     xlab="Temperature", ylab="Acceptance rate (rolling, w=200)",
+     xlim=rev(range(res$temp_trace, na.rm=TRUE)))
+
+plot(res$temp_trace, type="l", xlab="Iteration", ylab="Temperature")
+plot(stats::filter(res$accept_trace, rep(1/200, 200), sides=1),
+     type="l", xlab="Iteration", ylab="Acceptance rate (rolling)")
+```
+
+### c
+
+#### Logarithmic cooling 
+
+```{r 2_3, echo=FALSE, warning=FALSE}
+#####
+# 2(c)
+#####
+res <- sa_minimize_crit(bankdata, k=22, n_iter=30000,
+                        cooling="log", T0=NULL, seed=1)
+res$best_cost
+res$best_subs
+make_plot(X, res$best_subs, sprintf("Best candidates for logarithmic cooling schedule. Cost:%.1f", res$best_cost))
+
+w <- 200
+acc_roll <- stats::filter(res$accept_trace, rep(1/w, w), sides = 1)
+plot(res$temp_trace, acc_roll, type="l",
+     xlab="Temperature", ylab="Acceptance rate (rolling, w=200)",
+     xlim=rev(range(res$temp_trace, na.rm=TRUE)))
+
+plot(res$temp_trace, type="l", xlab="Iteration", ylab="Temperature")
+plot(stats::filter(res$accept_trace, rep(1/200, 200), sides=1),
+     type="l", xlab="Iteration", ylab="Acceptance rate (rolling)")
+```
+
+#### Too small T0 + fast cooling 
+
+```{r 2_3_1, echo=FALSE, warning=FALSE}
+alpha=0.9
+T0=100
+res <- sa_minimize_crit(bankdata, k=22, n_iter=30000,
+                        cooling="geometric", T0=T0, alpha=alpha, seed=1)
+res$best_cost
+res$best_subs
+make_plot(X, res$best_subs, sprintf("Geometric alpha=%.4f, T0=%d. Cost:%.1f", alpha, T0, res$best_cost))
+
+w <- 200
+acc_roll <- stats::filter(res$accept_trace, rep(1/w, w), sides = 1)
+plot(res$temp_trace, acc_roll, type="l",
+     xlab="Temperature", ylab="Acceptance rate (rolling, w=200)",
+     xlim=rev(range(res$temp_trace, na.rm=TRUE)))
+
+plot(res$temp_trace, type="l", xlab="Iteration", ylab="Temperature")
+plot(stats::filter(res$accept_trace, rep(1/200, 200), sides=1),
+     type="l", xlab="Iteration", ylab="Acceptance rate (rolling)")
+```
+
+#### Too large T0 + very slow cooling + too few iterations
+
+```{r 2_3_2, echo=FALSE, warning=FALSE}
+T0=10000
+alpha=0.999995
+res <- sa_minimize_crit(bankdata, k=22, n_iter=1000,
+                        cooling="geometric", T0=T0, alpha=alpha, seed=1)
+res$best_cost
+res$best_subs
+make_plot(X, res$best_subs, sprintf("Geometric alpha=%.6f, T0=%d. Cost:%.1f", alpha, T0, res$best_cost))
+
+w <- 200
+acc_roll <- stats::filter(res$accept_trace, rep(1/w, w), sides = 1)
+plot(res$temp_trace, acc_roll, type="l",
+     xlab="Temperature", ylab="Acceptance rate (rolling, w=200)",
+     xlim=rev(range(res$temp_trace, na.rm=TRUE)))
+
+plot(res$temp_trace, type="l", xlab="Iteration", ylab="Temperature")
+plot(stats::filter(res$accept_trace, rep(1/200, 200), sides=1),
+     type="l", xlab="Iteration", ylab="Acceptance rate (rolling)")
+```
+
 ## Appendix
 
 
