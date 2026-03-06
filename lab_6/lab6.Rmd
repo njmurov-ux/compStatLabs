@@ -218,7 +218,7 @@ set.seed(123)
 index <- sample(fullset, 22)
 
 plot(bankdata[-index, 1], bankdata[-index, 2])
-points(bankdata[index, 1], bankdata[index, 2], col = "red", cex = 4, pch = 4)
+points(bankdata[index, 1], bankdata[index, 2], col = "red", cex = 10, pch = 46)
 
 
 ```
@@ -248,6 +248,8 @@ min_function <- crit(bankdata, index)
 min_x <- x_t
 
 function_x_t <- min_function
+
+criterion_vec <- c()
 
 for (j in 1:it) {
   if (j %% (round(it/5)) == 0) {
@@ -282,6 +284,7 @@ for (j in 1:it) {
       #otherwise we do not accept x_t
     } 
   }
+  criterion_vec <- c(criterion_vec, min_function)
   temp <- alpha * temp
   mj <- max(1, floor(beta * mj))
 }
@@ -292,7 +295,7 @@ print(crit(bankdata, index))
 index <- min_x
 
 plot(bankdata[-index, 1], bankdata[-index, 2], main = "Best individuals tested")
-points(bankdata[index, 1], bankdata[index, 2], col = "red", cex = 4, pch = 4)
+points(bankdata[index, 1], bankdata[index, 2], col = "red", cex = 10, pch = 46)
 
 print("Best function value:")
 print(min_function)
@@ -300,6 +303,8 @@ print(min_function)
 print("Average diff:")
 print(mean(diff))
 hist(diff, main = "Delta in function")
+
+plot(x = 1:it, y = criterion_vec, lwd = 2, t = "l", main = "Trace plot, criterion against iterations")
 
 return(min_x)
 }
@@ -309,10 +314,10 @@ return(min_x)
 ```
 
 SA(prob_keep = 0.5, alpha = 0.9, beta = 1.02, mj = 50, temp = 10000, it = 200)
-This gives 16203 as minimum function value but is painfully slow so cannot run it in the knit.
+This gives 16203 as minimum function value but is painfully slow so cannot run it in the knit. The convergence plot was flat after 100 itterations.
 
 ```{r 2c}
-# SA(prob_keep = 0.5, alpha = 0.9, beta = 1.02, mj = 50, temp = 10000, it = 200)
+#SA(prob_keep = 0.5, alpha = 0.9, beta = 1.02, mj = 50, temp = 10000, it = 200)
 # This gives 16203 as minimum function value but is painfully slow
 
 
@@ -322,22 +327,22 @@ Lower function value and faster, higher starting temperature and lower alpha mak
 
 ```{r 2c2}
 set.seed(1234)
-SA(prob_keep = 0.9, alpha = 0.7, beta = 1.03, mj = 50, temp = 10000, it = 50)
+SA(prob_keep = 0.9, alpha = 0.7, beta = 1.03, mj = 50, temp = 10000, it = 100)
 
 
 ```
 
-Higher chance of swapping individuals seems to lead to a worse outcome
+Higher chance of swapping individuals seems to lead to a worse outcome. In the traceplot below we see it is because we do not find improvements as often.
 ```{r 2c3}
 set.seed(1234)
-SA(prob_keep = 0.7, alpha = 0.7, beta = 1.03, mj = 50, temp = 10000, it = 50)
+SA(prob_keep = 0.7, alpha = 0.7, beta = 1.03, mj = 50, temp = 10000, it = 100)
 
 ```
 
-Lower swaprate, on average 1.1 individual performed worse than swapping 2 on average, swapping fewer individuals might lead to locked local minima situations or slower progress. 
+Lower swaprate, on average 1.1 individual performed worse than swapping 2 on average, a fear is that swapping fewer individuals might lead to locked local minima situations or slower progress. In the trace plot we see that we never get the big jumps but like with lower swaprate but we do get steady almost continous progress.
 ```{r 2c4}
 set.seed(12345)
-SA(prob_keep = 0.95, alpha = 0.7, beta = 1.05, mj = 25, temp = 10000, it = 50)
+SA(prob_keep = 0.95, alpha = 0.7, beta = 1.03, mj = 25, temp = 10000, it = 100)
 
 ```
 
